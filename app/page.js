@@ -14,18 +14,32 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [folderStack, setFolderStack] = useState([{ id: "root", name: "My Drive" }]);
+  const START_FOLDER = "1hm9nX8C-mvS4sKgtuvsg6cmUlZhIcQ9F";
+  const [folderStack, setFolderStack] = useState([{ id: START_FOLDER, name: "Start" }]);
   const currentFolderId = folderStack[folderStack.length - 1].id;
   const [uploads, setUploads] = useState([]);
+  const [query, setQuery] = useState("");
+  const [pageToken, setPageToken] = useState(undefined);
+  const [nextToken, setNextToken] = useState(null);
+  const [prevTokens, setPrevTokens] = useState([]);
+  const [order, setOrder] = useState('name_asc'); // name_asc | name_desc
+  const [typeFilter, setTypeFilter] = useState('all'); // all | folder | file
 
-  async function loadFiles(folderId) {
+  async function loadFiles(folderId, token) {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/drive/list?folderId=${encodeURIComponent(folderId)}`);
+      const sp = new URLSearchParams();
+      sp.set('folderId', folderId);
+      if (query) sp.set('search', query);
+      if (token) sp.set('pageToken', token);
+      if (order) sp.set('order', order);
+      if (typeFilter) sp.set('type', typeFilter);
+      const res = await fetch(`/api/drive/list?${sp.toString()}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load files");
       setFiles(data.files || []);
+      setNextToken(data.nextPageToken || null);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -34,9 +48,9 @@ export default function Home() {
   }
 
   useEffect(() => {
-    loadFiles(currentFolderId);
+    loadFiles(currentFolderId, pageToken);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentFolderId]);
+  }, [currentFolderId, pageToken, query, order, typeFilter]);
 
   async function onUpload(e) {
     e.preventDefault();
@@ -134,6 +148,9 @@ export default function Home() {
 
   function openFolder(f) {
     setFolderStack((prev) => [...prev, { id: f.id, name: f.name }]);
+    setPageToken(undefined);
+    setPrevTokens([]);
+    setNextToken(null);
   }
 
   function goBackTo(index) {
@@ -183,6 +200,39 @@ export default function Home() {
         {notice ? (
           <div className="mt-4 rounded-md border border-green-200 bg-green-50 p-3 text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-200">{notice}</div>
         ) : null}
+
+        <section className="mt-4">
+          <form
+            onSubmit={(e) => { e.preventDefault(); setPageToken(undefined); setPrevTokens([]); setNextToken(null); loadFiles(currentFolderId, undefined); }}
+            className="flex flex-col sm:flex-row gap-2"
+          >
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => { setQuery(e.target.value); setPageToken(undefined); setPrevTokens([]); setNextToken(null); }}
+              placeholder="Cari nama file..."
+              className="w-full rounded border px-3 py-2 text-sm bg-white dark:bg-zinc-900"
+            />
+            <select
+              value={order}
+              onChange={(e) => { setOrder(e.target.value); setPageToken(undefined); setPrevTokens([]); setNextToken(null); }}
+              className="rounded border px-3 py-2 text-sm bg-white dark:bg-zinc-900"
+            >
+              <option value="name_asc">A–Z</option>
+              <option value="name_desc">Z–A</option>
+            </select>
+            <select
+              value={typeFilter}
+              onChange={(e) => { setTypeFilter(e.target.value); setPageToken(undefined); setPrevTokens([]); setNextToken(null); }}
+              className="rounded border px-3 py-2 text-sm bg-white dark:bg-zinc-900"
+            >
+              <option value="all">Semua</option>
+              <option value="folder">Folder</option>
+              <option value="file">File</option>
+            </select>
+            <button className="rounded-md border px-4 py-2 text-sm">Search</button>
+          </form>
+        </section>
 
         <section className="mt-6 grid gap-4 sm:grid-cols-2">
           <form onSubmit={onUpload} className="rounded-lg border p-4">
@@ -238,19 +288,8 @@ export default function Home() {
         </section>
 
         <section className="mt-6">
-          <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-lg font-medium">Items</h2>
-            <button
-              onClick={() => loadFiles(currentFolderId)}
-              className="rounded-md border px-3 py-1 text-sm disabled:opacity-50"
-              disabled={loading}
-            >
-              Refresh
-            </button>
-          </div>
-
-          <div className="overflow-hidden rounded-lg border">
-            <table className="w-full text-sm">
+          <div className="rounded-lg border overflow-x-auto">
+            <table className="min-w-full text-sm">
               <thead className="bg-zinc-100 dark:bg-zinc-900">
                 <tr>
                   <th className="px-3 py-2 text-left">Name</th>
@@ -261,12 +300,10 @@ export default function Home() {
                 </tr>
               </thead>
               <tbody>
-                {files.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-3 py-6 text-center text-zinc-500">
-                      {loading ? "Loading..." : "No items"}
-                    </td>
-                  </tr>
+                {loading ? (
+                  <tr><td className="px-3 py-4" colSpan={5}>Loading…</td></tr>
+                ) : files.length === 0 ? (
+                  <tr><td className="px-3 py-4" colSpan={5}>No items</td></tr>
                 ) : (
                   files.map((f) => {
                     const isFolder = f.mimeType === 'application/vnd.google-apps.folder';
@@ -317,6 +354,31 @@ export default function Home() {
                 )}
               </tbody>
             </table>
+          </div>
+          <div className="mt-3 flex items-center justify-between">
+            <button
+              className="rounded-md border px-3 py-1 text-sm disabled:opacity-50"
+              disabled={prevTokens.length === 0 || loading}
+              onClick={() => {
+                const prev = [...prevTokens];
+                const token = prev.pop();
+                setPrevTokens(prev);
+                setPageToken(token);
+              }}
+            >
+              Prev
+            </button>
+            <button
+              className="rounded-md border px-3 py-1 text-sm disabled:opacity-50"
+              disabled={!nextToken || loading}
+              onClick={() => {
+                if (!nextToken) return;
+                setPrevTokens(p => [...p, pageToken || null]);
+                setPageToken(nextToken);
+              }}
+            >
+              Next
+            </button>
           </div>
         </section>
       </main>
