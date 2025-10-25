@@ -30,6 +30,8 @@ export async function GET(request, { params }) {
         Authorization: `Bearer ${accessToken}`,
         ...(range ? { Range: range } : {}),
       },
+      // Tie upstream to client abort to prevent dangling streams and memory usage
+      signal: request.signal,
     });
 
     if (!res.ok && res.status !== 206) {
@@ -51,7 +53,18 @@ export async function GET(request, { params }) {
         headers.set('Cache-Control', 'no-store');
         const status = range ? 206 : 200;
         const nodeStream = driveRes.data;
-        const webStream = nodeStream?.toWeb ? nodeStream.toWeb() : Readable.toWeb(nodeStream);
+        // Wrap Node stream into a Web ReadableStream to support proper cancel/backpressure
+        const webStream = new ReadableStream({
+          start(controller) {
+            nodeStream.on('data', (chunk) => controller.enqueue(chunk));
+            nodeStream.on('end', () => controller.close());
+            nodeStream.on('error', (err) => controller.error(err));
+          },
+          cancel() {
+            // Client disconnected: destroy upstream to free memory
+            nodeStream.destroy();
+          },
+        });
         return new Response(webStream, { status, headers });
       } catch (sdkErr) {
         console.error('Drive stream fallback SDK error', {
@@ -93,3 +106,4 @@ export async function GET(request, { params }) {
     return NextResponse.json({ error: 'Failed to stream file' }, { status: 500 });
   }
 }
+

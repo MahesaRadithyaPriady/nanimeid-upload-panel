@@ -14,17 +14,17 @@ export async function POST(request) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
     const drive = getDrive();
 
     console.log('Drive upload start', {
       folderId,
       name: file.name,
       type: file.type,
-      size: buffer.length,
+      size: typeof file.size === 'number' ? file.size : undefined,
     });
+
+    const webStream = file.stream();
+    const bodyStream = typeof Readable.fromWeb === 'function' ? Readable.fromWeb(webStream) : Readable.from(webStream);
 
     const res = await drive.files.create({
       requestBody: {
@@ -33,7 +33,7 @@ export async function POST(request) {
       },
       media: {
         mimeType: file.type || 'application/octet-stream',
-        body: Readable.from(buffer),
+        body: bodyStream,
       },
       fields: 'id, name',
       supportsAllDrives: true,
@@ -51,3 +51,4 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Failed to upload file', details: err?.response?.data || err?.message }, { status: 500 });
   }
 }
+
