@@ -50,7 +50,10 @@ export async function GET(request, { params }) {
         if (srcHeaders['content-length']) headers.set('Content-Length', srcHeaders['content-length']);
         if (srcHeaders['accept-ranges']) headers.set('Accept-Ranges', srcHeaders['accept-ranges']);
         if (srcHeaders['content-range']) headers.set('Content-Range', srcHeaders['content-range']);
-        headers.set('Cache-Control', 'no-store');
+        if (srcHeaders['etag']) headers.set('ETag', srcHeaders['etag']);
+        if (srcHeaders['last-modified']) headers.set('Last-Modified', srcHeaders['last-modified']);
+        headers.set('Vary', 'Range');
+        headers.set('Cache-Control', 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800');
         const status = range ? 206 : 200;
         const nodeStream = driveRes.data;
         // Wrap Node stream into a Web ReadableStream to support proper cancel/backpressure
@@ -87,11 +90,16 @@ export async function GET(request, { params }) {
     const srcLen = res.headers.get('content-length');
     const srcAccept = res.headers.get('accept-ranges');
     const srcRange = res.headers.get('content-range');
+    const srcEtag = res.headers.get('etag');
+    const srcLM = res.headers.get('last-modified');
     headers.set('Content-Type', srcType || 'video/mp4');
     if (srcLen) headers.set('Content-Length', srcLen);
     if (srcAccept) headers.set('Accept-Ranges', srcAccept);
     if (srcRange) headers.set('Content-Range', srcRange);
-    headers.set('Cache-Control', 'no-store');
+    if (srcEtag) headers.set('ETag', srcEtag);
+    if (srcLM) headers.set('Last-Modified', srcLM);
+    headers.set('Vary', 'Range');
+    headers.set('Cache-Control', 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800');
     const status = range || srcRange ? 206 : 200;
     return new Response(res.body, { status, headers });
   } catch (err) {
