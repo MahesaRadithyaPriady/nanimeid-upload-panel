@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams, usePathname } from "next/navigation";
+import { useSearchParams, usePathname, useRouter } from "next/navigation";
 
 export default function WatchPage() {
   const qp = useSearchParams();
   const pathname = usePathname();
+  const router = useRouter();
   const initialId = qp.get('id') || (() => {
     const parts = (pathname || '').split('/').filter(Boolean);
     const watchIndex = parts.findIndex(p => p === 'watch');
@@ -13,8 +14,9 @@ export default function WatchPage() {
   })();
   const [id, setId] = useState(initialId);
   const nameParam = qp.get('name');
+  const fromParam = qp.get('from') || '';
   const resourceKey = qp.get('resourceKey') || qp.get('resourcekey') || '';
-  const title = nameParam ? decodeURIComponent(nameParam) : (id ? `Video ${id}` : 'Missing file id');
+  const title = nameParam ? nameParam : (id ? `Video ${id}` : 'Missing file id');
   const src = id ? `/api/drive/stream/${encodeURIComponent(id)}${resourceKey ? `?resourceKey=${encodeURIComponent(resourceKey)}` : ''}` : '';
   const [meta, setMeta] = useState(null);
   const metaUrl = id ? `/api/drive/meta/${encodeURIComponent(id)}${resourceKey ? `?resourceKey=${encodeURIComponent(resourceKey)}` : ''}` : '';
@@ -50,7 +52,24 @@ export default function WatchPage() {
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black text-black dark:text-zinc-50">
       <main className="mx-auto max-w-4xl p-6">
-        <a href="/" className="text-sm underline">← Back</a>
+        <button
+          type="button"
+          className="text-sm underline"
+          onClick={() => {
+            const dest = fromParam || '';
+            if (dest) {
+              router.push(dest);
+              return;
+            }
+            if (typeof window !== 'undefined' && window.history.length > 1) {
+              router.back();
+              return;
+            }
+            window.location.href = '/';
+          }}
+        >
+          ← Back
+        </button>
         <h1 className="mt-2 text-xl font-semibold">{title}</h1>
         {id ? (
           <div className="mt-4">

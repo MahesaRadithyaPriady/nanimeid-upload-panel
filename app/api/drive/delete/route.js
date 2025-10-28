@@ -7,10 +7,25 @@ export async function DELETE(request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
+    const permanent = searchParams.get('permanent') === 'true';
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
     const drive = getDrive();
-    await drive.files.delete({ fileId: id });
+    if (permanent) {
+      try {
+        await drive.files.delete({ fileId: id, supportsAllDrives: true });
+      } catch (err) {
+        if (err?.code === 403) {
+          // Fallback to trash if permanent delete is forbidden
+          await drive.files.update({ fileId: id, supportsAllDrives: true, requestBody: { trashed: true } });
+        } else {
+          throw err;
+        }
+      }
+    } else {
+      // Soft delete (move to trash) by default
+      await drive.files.update({ fileId: id, supportsAllDrives: true, requestBody: { trashed: true } });
+    }
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('Drive delete error', {
@@ -19,6 +34,8 @@ export async function DELETE(request) {
       response: err?.response?.data,
       errors: err?.errors,
     });
-    return NextResponse.json({ error: 'Failed to delete file' }, { status: 500 });
+    const status = Number.isInteger(err?.code) ? err.code : 500;
+    const msg = err?.errors?.[0]?.message || 'Failed to delete file';
+    return NextResponse.json({ error: msg }, { status });
   }
 }

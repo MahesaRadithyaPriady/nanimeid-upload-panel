@@ -37,7 +37,7 @@ export async function GET(request) {
         q,
         pageSize: Math.min(Math.max(pageSize, 1), 100),
         pageToken: token,
-        fields: 'nextPageToken, files(id, name, mimeType, size, modifiedTime, iconLink, webViewLink)',
+        fields: 'nextPageToken, files(id, name, mimeType, size, modifiedTime, iconLink, webViewLink, capabilities(canTrash, canDelete))',
         supportsAllDrives: true,
         includeItemsFromAllDrives: true,
         corpora: 'allDrives',

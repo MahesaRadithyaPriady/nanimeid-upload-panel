@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 function bytesToSize(bytes) {
   if (!bytes && bytes !== 0) return "-";
@@ -10,20 +11,331 @@ function bytesToSize(bytes) {
 }
 
 export default function Home() {
+  const router = useRouter();
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [linkJobs, setLinkJobs] = useState([]); // {url, status: 'pending'|'processing'|'done'|'error', error?: string}
+  const [showDestModal, setShowDestModal] = useState(false);
+  const [bulkAction, setBulkAction] = useState(null); // 'copy' | 'move'
+  const [destStack, setDestStack] = useState([]); // [{id,name}]
+  const [destFolders, setDestFolders] = useState([]); // list of folders in current dest
+  const [destLoading, setDestLoading] = useState(false);
+  const [destPageToken, setDestPageToken] = useState(undefined);
+  const [destNextToken, setDestNextToken] = useState(null);
+  const [destPrevTokens, setDestPrevTokens] = useState([]);
+  const [destQuery, setDestQuery] = useState("");
+  const [destNewName, setDestNewName] = useState("");
   const START_FOLDER = "1hm9nX8C-mvS4sKgtuvsg6cmUlZhIcQ9F";
-  const [folderStack, setFolderStack] = useState([{ id: START_FOLDER, name: "Start" }]);
+  const [folderStack, setFolderStack] = useState([{ id: START_FOLDER, name: "NanimeID Pusat Video" }]);
   const currentFolderId = folderStack[folderStack.length - 1].id;
   const [uploads, setUploads] = useState([]);
+  const [selectedNames, setSelectedNames] = useState([]);
+  const [selectedTotal, setSelectedTotal] = useState(0);
+  const [selectedIds, setSelectedIds] = useState([]);
   const [query, setQuery] = useState("");
   const [pageToken, setPageToken] = useState(undefined);
   const [nextToken, setNextToken] = useState(null);
   const [prevTokens, setPrevTokens] = useState([]);
   const [order, setOrder] = useState('name_asc'); // name_asc | name_desc
   const [typeFilter, setTypeFilter] = useState('all'); // all | folder | file
+  const [hasRestored, setHasRestored] = useState(false);
+  const [wantRestorePath, setWantRestorePath] = useState(false);
+
+  // Try to restore folderStack from URL ?path=... on first load
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (typeof window === 'undefined') return;
+      try {
+        const url = new URL(window.location.href);
+        const pathParam = url.searchParams.get('path');
+        setWantRestorePath(!!pathParam);
+        if (!pathParam) return;
+        const decoded = decodeURIComponent(pathParam);
+        const segments = decoded.split('/').filter(Boolean);
+        if (segments.length === 0) return;
+        // Build initial stack with START_FOLDER root
+        const rootName = folderStack[0]?.name || 'NanimeID Pusat Video';
+        const stack = [{ id: START_FOLDER, name: rootName }];
+        // If first segment equals root name, skip it
+        const startIndex = segments[0] === rootName ? 1 : 0;
+        let parentId = START_FOLDER;
+        for (let i = startIndex; i < segments.length; i++) {
+          const seg = segments[i];
+          // Paginate through folders under current parent to find exact name match
+          let pageToken; let found = null;
+          while (!found) {
+            const sp = new URLSearchParams();
+            sp.set('folderId', parentId);
+            sp.set('type', 'folder');
+            sp.set('order', 'name_asc');
+            if (pageToken) sp.set('pageToken', pageToken);
+            const res = await fetch(`/api/drive/list?${sp.toString()}`, { cache: 'no-store' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data?.error || 'Failed to resolve path');
+            const segNorm = (seg || '').trim();
+            found = (data.files || []).find(f => (f.name || '').trim() === segNorm) || null;
+            if (found) break;
+            pageToken = data.nextPageToken || null;
+            if (!pageToken) break;
+          }
+  
+          if (!found) break; // stop at deepest resolvable segment
+          stack.push({ id: found.id, name: found.name });
+          parentId = found.id;
+        }
+        if (!cancelled && stack.length > 1) {
+          setFolderStack(stack);
+          setPageToken(undefined);
+          setPrevTokens([]);
+          setNextToken(null);
+        }
+      } catch (_) {
+        // ignore restore errors
+      } finally {
+        if (!cancelled) setHasRestored(true);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleRestorePath = async () => {
+    const url = new URL(window.location.href);
+    const pathParam = url.searchParams.get('path');
+    if (!pathParam) return;
+    const decoded = decodeURIComponent(pathParam);
+    const segments = decoded.split('/').filter(Boolean);
+    if (segments.length === 0) return;
+    // Build initial stack with START_FOLDER root
+    const rootName = folderStack[0]?.name || 'NanimeID Pusat Video';
+    const stack = [{ id: START_FOLDER, name: rootName }];
+    // If first segment equals root name, skip it
+    const startIndex = segments[0] === rootName ? 1 : 0;
+    let parentId = START_FOLDER;
+    for (let i = startIndex; i < segments.length; i++) {
+      const seg = segments[i];
+      // Paginate through folders under current parent to find exact name match
+      let pageToken; let found = null;
+      while (!found) {
+        const sp = new URLSearchParams();
+        sp.set('folderId', parentId);
+        sp.set('type', 'folder');
+        sp.set('order', 'name_asc');
+        if (pageToken) sp.set('pageToken', pageToken);
+        const res = await fetch(`/api/drive/list?${sp.toString()}`, { cache: 'no-store' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'Failed to resolve path');
+        const segNorm = (seg || '').trim();
+        found = (data.files || []).find(f => (f.name || '').trim() === segNorm) || null;
+        if (found) break;
+        pageToken = data.nextPageToken || null;
+        if (!pageToken) break;
+      }
+  
+      if (!found) break; // stop at deepest resolvable segment
+      stack.push({ id: found.id, name: found.name });
+      parentId = found.id;
+    }
+    if (stack.length > 1) {
+      setFolderStack(stack);
+      setPageToken(undefined);
+      setPrevTokens([]);
+      setNextToken(null);
+    }
+  };
+
+  async function onRename(f) {
+    const current = (f && f.name) || '';
+    const name = prompt('Rename to:', current);
+    if (!name) return;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch('/api/drive/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: f.id, name: name.trim() })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Rename failed');
+      await loadFiles(currentFolderId);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function openCopyModal() {
+    if (selectedIds.length === 0) return;
+    setBulkAction('copy');
+    startDestBrowser();
+  }
+
+  function openMoveModal() {
+    if (selectedIds.length === 0) return;
+    setBulkAction('move');
+    startDestBrowser();
+  }
+
+  async function onConfirmBulkDestination() {
+    if (!bulkAction || destStack.length === 0) return;
+    const destId = destStack[destStack.length - 1].id;
+    setLoading(true);
+    setError('');
+    try {
+      const endpoint = bulkAction === 'copy' ? '/api/drive/copy' : '/api/drive/move';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedIds, destinationId: destId })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Operation failed');
+      const failures = (data?.results || []).filter(r => r.error);
+      await loadFiles(currentFolderId);
+      if (failures.length) {
+        setError(`${failures.length} dari ${selectedIds.length} item gagal diproses`);
+      } else {
+        setNotice(bulkAction === 'copy' ? 'Berhasil menyalin semua item' : 'Berhasil memindahkan semua item');
+        setTimeout(() => setNotice(''), 2000);
+      }
+      setSelectedIds([]);
+      setShowDestModal(false);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function startDestBrowser() {
+    const rootName = folderStack[0]?.name || 'NanimeID Pusat Video';
+    setDestStack([{ id: START_FOLDER, name: rootName }]);
+    setDestPageToken(undefined);
+    setDestNextToken(null);
+    setDestPrevTokens([]);
+    if (destQuery) setDestQuery("");
+    setShowDestModal(true);
+    // initial load
+    loadDestFolders(START_FOLDER, undefined, "");
+  }
+
+  async function loadDestFolders(folderId, token, searchOverride) {
+    setDestLoading(true);
+    try {
+      const sp = new URLSearchParams();
+      sp.set('folderId', folderId);
+      sp.set('type', 'folder');
+      sp.set('order', 'name_asc');
+      const search = searchOverride !== undefined ? searchOverride : destQuery;
+      if (search) sp.set('search', search);
+      if (token) sp.set('pageToken', token);
+      const res = await fetch(`/api/drive/list?${sp.toString()}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to load folders');
+      setDestFolders(data.files || []);
+      setDestNextToken(data.nextPageToken || null);
+    } catch (e) {
+      setError(e.message || 'Gagal memuat folder tujuan');
+    } finally {
+      setDestLoading(false);
+    }
+  }
+
+  function openDestFolder(f) {
+    setDestStack(prev => [...prev, { id: f.id, name: f.name }]);
+    setDestPageToken(undefined);
+    setDestNextToken(null);
+    setDestPrevTokens([]);
+    if (destQuery) setDestQuery("");
+    loadDestFolders(f.id, undefined, "");
+  }
+
+  function destGoBackTo(index) {
+    setDestStack(prev => prev.slice(0, index + 1));
+    const id = destStack[index].id;
+    setDestPageToken(undefined);
+    setDestNextToken(null);
+    setDestPrevTokens([]);
+    if (destQuery) setDestQuery("");
+    loadDestFolders(id, undefined, "");
+  }
+
+  function destPaginatePrev() {
+    if (destPrevTokens.length === 0) return;
+    const prev = [...destPrevTokens];
+    const token = prev.pop();
+    setDestPrevTokens(prev);
+    setDestPageToken(token || undefined);
+    const id = destStack[destStack.length - 1].id;
+    loadDestFolders(id, token || undefined, destQuery);
+  }
+
+  function destPaginateNext() {
+    if (!destNextToken) return;
+    setDestPrevTokens(p => [...p, destPageToken || null]);
+    setDestPageToken(destNextToken);
+    const id = destStack[destStack.length - 1].id;
+    loadDestFolders(id, destNextToken, destQuery);
+  }
+
+  function onDestSearchSubmit(e) {
+    e.preventDefault();
+    const id = destStack[destStack.length - 1].id;
+    setDestPageToken(undefined);
+    setDestNextToken(null);
+    setDestPrevTokens([]);
+    loadDestFolders(id, undefined, destQuery);
+  }
+
+  async function onDestCreateFolder(e) {
+    e.preventDefault();
+    const name = (destNewName || '').trim();
+    if (!name) return;
+    const parentId = destStack[destStack.length - 1].id;
+    setDestLoading(true);
+    try {
+      const res = await fetch('/api/drive/create-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, parentId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Create folder failed');
+      setDestNewName('');
+      await loadDestFolders(parentId, undefined);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDestLoading(false);
+    }
+  }
+
+  async function onDestDelete(f) {
+    if (!f?.id) return;
+    const allowed = f.capabilities?.canTrash || f.capabilities?.canDelete;
+    if (!allowed) {
+      setError('Tidak punya izin untuk menghapus folder ini');
+      return;
+    }
+    if (!confirm('Hapus folder ini?')) return;
+    setDestLoading(true);
+    try {
+      const res = await fetch(`/api/drive/delete?id=${encodeURIComponent(f.id)}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Delete failed');
+      const id = destStack[destStack.length - 1].id;
+      await loadDestFolders(id, undefined, destQuery);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDestLoading(false);
+    }
+  }
 
   async function loadFiles(folderId, token) {
     setLoading(true);
@@ -47,10 +359,18 @@ export default function Home() {
     }
   }
 
+  function onSelectFiles(e) {
+    const input = e.currentTarget;
+    const selected = Array.from(input.files || []);
+    setSelectedTotal(selected.length);
+    setSelectedNames(selected.slice(0, 3).map(f => f.name));
+  }
+
   useEffect(() => {
+    if (wantRestorePath && !hasRestored) return; // wait until path restoration completes
     loadFiles(currentFolderId, pageToken);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentFolderId, pageToken, query, order, typeFilter]);
+  }, [currentFolderId, pageToken, query, order, typeFilter, wantRestorePath, hasRestored]);
 
   async function onUpload(e) {
     e.preventDefault();
@@ -101,12 +421,122 @@ export default function Home() {
         }
       };
       xhr.send(fd);
+    })))
+
+    formEl.reset();
+    setSelectedNames([]);
+    setSelectedTotal(0);
+  }
+
+  async function onUploadFolder(e) {
+    e.preventDefault();
+    const formEl = e.currentTarget;
+    const input = formEl.querySelector('input[name="folder"]');
+    const selected = Array.from(input.files || []);
+    if (selected.length === 0) {
+      setError("Pilih folder dengan berkas di dalamnya");
+      return;
+    }
+    setError("");
+    const initial = selected.map(f => ({ name: f.webkitRelativePath || f.name, progress: 0, status: 'uploading', error: '' }));
+    setUploads(prev => [...prev, ...initial]);
+
+    await Promise.all(selected.map((file, idx) => new Promise((resolve) => {
+      const globalIndex = uploads.length + idx;
+      const fd = new FormData();
+      fd.set('folderId', currentFolderId);
+      const rel = file.webkitRelativePath || file.name;
+      const parts = (rel || '').split('/');
+      const sub = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
+      if (sub) fd.set('relativePath', sub);
+      fd.set('file', file, file.name);
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/drive/upload');
+      xhr.upload.onprogress = (ev) => {
+        if (ev.lengthComputable) {
+          const pct = Math.round((ev.loaded / ev.total) * 100);
+          setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, progress: pct, status: 'uploading' } : it));
+        }
+      };
+      xhr.upload.onload = () => {
+        setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, status: 'processing' } : it));
+      };
+      xhr.onreadystatechange = async () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, progress: 100, status: 'done' } : it));
+            await loadFiles(currentFolderId);
+            resolve();
+          } else {
+            let msg = 'Upload failed';
+            try { msg = JSON.parse(xhr.responseText).error || msg; } catch {}
+            setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, status: 'error', error: msg } : it));
+            resolve();
+          }
+        }
+      };
+      xhr.send(fd);
     })));
 
     formEl.reset();
   }
 
+  async function onUploadLinks(e) {
+    e.preventDefault();
+    const formEl = e.currentTarget;
+    const textarea = formEl.querySelector('textarea[name="links"]');
+    const lines = (textarea.value || '').split('\n').map(s => s.trim()).filter(Boolean);
+    if (lines.length === 0) {
+      setError('Masukkan minimal satu URL');
+      return;
+    }
+    setError('');
+    setNotice('');
+    // Initialize jobs
+    const jobs = lines.map(u => ({ url: u, status: 'pending', error: '' }));
+    setLinkJobs(jobs);
+    setLoading(true);
+    try {
+      // Process one-by-one to keep UI responsive and simple
+      let failCount = 0;
+      for (let i = 0; i < jobs.length; i++) {
+        setLinkJobs(prev => prev.map((j, idx) => idx === i ? { ...j, status: 'processing', error: '' } : j));
+        try {
+          const res = await fetch('/api/drive/upload-from-link', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: jobs[i].url, folderId: currentFolderId }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data?.error || 'Gagal upload via link');
+          const hadError = Array.isArray(data?.results) && data.results[0]?.error;
+          if (hadError) throw new Error(data.results[0].error);
+          setLinkJobs(prev => prev.map((j, idx) => idx === i ? { ...j, status: 'done', error: '' } : j));
+          await loadFiles(currentFolderId);
+        } catch (err) {
+          setLinkJobs(prev => prev.map((j, idx) => idx === i ? { ...j, status: 'error', error: err?.message || 'Gagal' } : j));
+          failCount += 1;
+        }
+      }
+      if (failCount === 0) {
+        setNotice('Semua link berhasil diunggah');
+        setTimeout(() => setNotice(''), 2000);
+        formEl.reset();
+      } else {
+        setError(`${failCount} dari ${jobs.length} link gagal diunggah`);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function onDelete(id) {
+    const f = files.find((x) => x.id === id);
+    const allowed = f && (f.capabilities?.canTrash || f.capabilities?.canDelete);
+    if (!allowed) {
+      setError('Tidak punya izin untuk menghapus item ini');
+      return;
+    }
     if (!confirm("Delete this item?")) return;
     setLoading(true);
     setError("");
@@ -148,13 +578,25 @@ export default function Home() {
 
   function openFolder(f) {
     setFolderStack((prev) => [...prev, { id: f.id, name: f.name }]);
+    if (query) setQuery("");
     setPageToken(undefined);
     setPrevTokens([]);
     setNextToken(null);
+    setSelectedIds([]);
+  }
+
+  function openWatch(f) {
+    const currentRel = typeof window !== 'undefined' ? `${window.location.pathname}${window.location.search}` : '/';
+    const base = `/watch/${encodeURIComponent(f.id)}`;
+    const params = new URLSearchParams();
+    if (f.name) params.set('name', f.name);
+    params.set('from', currentRel);
+    router.push(`${base}?${params.toString()}`);
   }
 
   function goBackTo(index) {
     setFolderStack((prev) => prev.slice(0, index + 1));
+    setSelectedIds([]);
   }
 
   const breadcrumb = useMemo(
@@ -176,6 +618,91 @@ export default function Home() {
     [folderStack]
   );
 
+  useEffect(() => {
+    // Keep selection only for currently visible files
+    setSelectedIds((prev) => prev.filter((id) => files.some((f) => f.id === id)));
+  }, [files]);
+
+  useEffect(() => {
+    // Reflect human-readable path in the URL query without navigation
+    if (typeof window === 'undefined') return;
+    if (!hasRestored) return; // avoid overwriting incoming path before restoration
+    const names = folderStack.map((f) => f.name).join('/');
+    const url = new URL(window.location.href);
+    const current = url.searchParams.get('path') || '';
+    if (current !== names) {
+      url.searchParams.set('path', names);
+      window.history.replaceState(null, '', url.toString());
+    }
+  }, [folderStack, hasRestored]);
+
+  function toggleSelect(id, checked) {
+    setSelectedIds((prev) => {
+      if (checked) return prev.includes(id) ? prev : [...prev, id];
+      return prev.filter((x) => x !== id);
+    });
+  }
+
+  function toggleSelectAll(checked) {
+    const selectable = files.filter((f) => (f.capabilities?.canTrash || f.capabilities?.canDelete)).map((f) => f.id);
+    if (checked) {
+      setSelectedIds(selectable);
+    } else {
+      setSelectedIds([]);
+    }
+  }
+
+  async function onBulkDelete() {
+    if (selectedIds.length === 0) return;
+    if (!confirm(`Delete ${selectedIds.length} items?`)) return;
+    setLoading(true);
+    setError("");
+    try {
+      const allowedIds = files
+        .filter((f) => selectedIds.includes(f.id) && (f.capabilities?.canTrash || f.capabilities?.canDelete))
+        .map((f) => f.id);
+
+      if (allowedIds.length === 0) {
+        setError('Tidak punya izin untuk menghapus item terpilih');
+        setLoading(false);
+        return;
+      }
+
+      const results = await Promise.allSettled(
+        allowedIds.map((id) => fetch(`/api/drive/delete?id=${encodeURIComponent(id)}`, { method: "DELETE" }))
+      );
+      const failures = [];
+      for (const r of results) {
+        if (r.status === 'fulfilled') {
+          const res = r.value;
+          if (!res.ok) {
+            try {
+              const data = await res.json();
+              failures.push(data.error || 'Delete failed');
+            } catch {
+              failures.push('Delete failed');
+            }
+          }
+        } else {
+          failures.push('Delete failed');
+        }
+      }
+      await loadFiles(currentFolderId);
+      setSelectedIds([]);
+      const skipped = selectedIds.length - allowedIds.length;
+      if (failures.length > 0 || skipped > 0) {
+        const parts = [];
+        if (failures.length > 0) parts.push(`${failures.length} gagal dihapus`);
+        if (skipped > 0) parts.push(`${skipped} dilewati (tidak ada izin)`);
+        setError(parts.join(', '));
+      }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function onCopyLink(f) {
     try {
       const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -188,10 +715,23 @@ export default function Home() {
     }
   }
 
+  if (wantRestorePath && !hasRestored) {
+    return (
+      <div className="min-h-screen bg-zinc-50 dark:bg-black text-black dark:text-zinc-50">
+        <main className="mx-auto max-w-4xl p-6 flex items-center justify-center h-[60vh]">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-8 w-8 rounded-full border-2 border-zinc-300 border-t-black dark:border-zinc-700 dark:border-t-white animate-spin" />
+            <div className="text-sm opacity-70">Memuat folder…</div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black text-black dark:text-zinc-50">
       <main className="mx-auto max-w-4xl p-6">
-        <h1 className="text-2xl font-semibold">Google Drive Manager</h1>
+        <h1 className="text-2xl font-semibold">{folderStack[folderStack.length - 1].name}</h1>
         <div className="mt-2">{breadcrumb}</div>
 
         {error ? (
@@ -233,11 +773,160 @@ export default function Home() {
             <button className="rounded-md border px-4 py-2 text-sm">Search</button>
           </form>
         </section>
+        {showDestModal ? (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-zinc-900 rounded-lg border p-4 w-[90%] max-w-2xl">
+              <h3 className="font-medium mb-2">{bulkAction === 'copy' ? 'Copy' : 'Move'} {selectedIds.length} item ke…</h3>
+              <div className="text-xs text-zinc-600 dark:text-zinc-300 mb-2 flex flex-wrap gap-1">
+                {destStack.map((f, idx) => (
+                  <span key={f.id} className="flex items-center gap-1">
+                    <button className="underline" onClick={() => destGoBackTo(idx)}>{f.name}</button>
+                    {idx < destStack.length - 1 ? <span className="opacity-70">/</span> : null}
+                  </span>
+                ))}
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 mb-2">
+                <form onSubmit={onDestSearchSubmit} className="flex gap-2">
+                  <input
+                    value={destQuery}
+                    onChange={(e) => setDestQuery(e.target.value)}
+                    placeholder="Cari folder..."
+                    className="w-full rounded border px-3 py-2 text-sm bg-white dark:bg-zinc-900"
+                  />
+                  <button className="rounded-md border px-3 py-2 text-sm">Search</button>
+                </form>
+                <form onSubmit={onDestCreateFolder} className="flex gap-2">
+                  <input
+                    value={destNewName}
+                    onChange={(e) => setDestNewName(e.target.value)}
+                    placeholder="Nama folder baru"
+                    className="w-full rounded border px-3 py-2 text-sm bg-white dark:bg-zinc-900"
+                  />
+                  <button className="rounded-md bg-black px-3 py-2 text-sm text-white dark:bg-white dark:text-black disabled:opacity-50" disabled={destLoading}>Create</button>
+                </form>
+              </div>
+              <div className="rounded border max-h-64 overflow-auto">
+                {destLoading ? (
+                  <div className="p-3 text-sm">Loading…</div>
+                ) : destFolders.length === 0 ? (
+                  <div className="p-3 text-sm">No folders</div>
+                ) : (
+                  <ul className="divide-y">
+                    {destFolders.map(df => (
+                      <li key={df.id} className="p-2 flex items-center justify-between">
+                        <button className="underline" onClick={() => openDestFolder(df)}>{df.name}</button>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs opacity-70">Folder</span>
+                          <button
+                            onClick={() => onDestDelete(df)}
+                            className="rounded-md border px-2 py-1 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-900 disabled:opacity-50"
+                            disabled={destLoading || !(df.capabilities?.canTrash || df.capabilities?.canDelete)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="mt-2 flex items-center justify-between">
+                <button
+                  className="rounded-md border px-3 py-1 text-sm disabled:opacity-50"
+                  onClick={destPaginatePrev}
+                  disabled={destPrevTokens.length === 0 || destLoading}
+                >
+                  Prev
+                </button>
+                <button
+                  className="rounded-md border px-3 py-1 text-sm disabled:opacity-50"
+                  onClick={destPaginateNext}
+                  disabled={!destNextToken || destLoading}
+                >
+                  Next
+                </button>
+              </div>
+              <div className="mt-3 flex justify-end gap-2">
+                <button
+                  className="rounded-md border px-3 py-1 text-sm"
+                  onClick={() => setShowDestModal(false)}
+                  disabled={loading}
+                >
+                  Batal
+                </button>
+                <button
+                  className="rounded-md bg-black px-3 py-1 text-sm text-white dark:bg-white dark:text-black disabled:opacity-50"
+                  onClick={onConfirmBulkDestination}
+                  disabled={loading || destStack.length === 0}
+                >
+                  Konfirmasi di sini
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        <section className="mt-6 grid gap-4 sm:grid-cols-2">
+          <form onSubmit={onUploadFolder} className="rounded-lg border p-4">
+            <h2 className="font-medium mb-2">Upload Folder</h2>
+            <input name="folder" type="file" className="block w-full text-sm" webkitdirectory="" directory="" />
+            <button
+              type="submit"
+              className="mt-3 rounded-md bg-black px-4 py-2 text-white dark:bg-white dark:text-black disabled:opacity-50"
+              disabled={loading}
+            >
+              Upload Folder
+            </button>
+          </form>
+
+          <form onSubmit={onUploadLinks} className="rounded-lg border p-4">
+            <h2 className="font-medium mb-2">Upload via Link</h2>
+            <textarea name="links" className="w-full rounded border px-3 py-2 text-sm bg-white dark:bg-zinc-900" rows="5" placeholder="Tempel beberapa URL, satu per baris" />
+            <button
+              type="submit"
+              className="mt-3 rounded-md bg-black px-4 py-2 text-white dark:bg-white dark:text-black disabled:opacity-50"
+              disabled={loading}
+            >
+              Upload Links
+            </button>
+            {linkJobs.length > 0 ? (
+              <div className="mt-3 space-y-2 text-xs">
+                <div className="opacity-70">Progress: {linkJobs.filter(j => j.status === 'done').length}/{linkJobs.length} selesai</div>
+                <ul className="space-y-1">
+                  {linkJobs.slice(-20).map((j, i) => (
+                    <li key={`${j.url}-${i}`} className="truncate">
+                      <span className="font-mono">{j.url}</span>
+                      <span className="ml-2">
+                        {j.status === 'pending' && 'Menunggu…'}
+                        {j.status === 'processing' && 'Mengunggah…'}
+                        {j.status === 'done' && 'Selesai'}
+                        {j.status === 'error' && `Gagal (${j.error})`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </form>
+        </section>
 
         <section className="mt-6 grid gap-4 sm:grid-cols-2">
           <form onSubmit={onUpload} className="rounded-lg border p-4">
             <h2 className="font-medium mb-2">Upload File</h2>
-            <input name="file" type="file" className="block w-full text-sm" multiple />
+            <input name="file" type="file" className="block w-full text-sm" multiple accept="video/*" onChange={onSelectFiles} />
+            {selectedTotal > 0 ? (
+              <div className="mt-2 text-xs">
+                <div className="opacity-70">File terpilih (maks 3):</div>
+                <ul className="list-disc ml-5 space-y-1">
+                  {selectedNames.map((n, i) => (
+                    <li key={`${n}-${i}`} className="truncate">{n}</li>
+                  ))}
+                </ul>
+                {selectedTotal > 3 ? (
+                  <div className="opacity-70 mt-1">+{selectedTotal - 3} lainnya</div>
+                ) : null}
+              </div>
+            ) : null}
             <button
               type="submit"
               className="mt-3 rounded-md bg-black px-4 py-2 text-white dark:bg-white dark:text-black disabled:opacity-50"
@@ -288,10 +977,40 @@ export default function Home() {
         </section>
 
         <section className="mt-6">
+          <div className="mb-2 flex items-center gap-2">
+            <button
+              onClick={onBulkDelete}
+              className="rounded-md border px-3 py-1 text-sm disabled:opacity-50"
+              disabled={selectedIds.length === 0 || loading}
+            >
+              Delete Selected ({selectedIds.length})
+            </button>
+            <button
+              onClick={openCopyModal}
+              className="rounded-md border px-3 py-1 text-sm disabled:opacity-50"
+              disabled={selectedIds.length === 0 || loading}
+            >
+              Copy Selected
+            </button>
+            <button
+              onClick={openMoveModal}
+              className="rounded-md border px-3 py-1 text-sm disabled:opacity-50"
+              disabled={selectedIds.length === 0 || loading}
+            >
+              Move Selected
+            </button>
+          </div>
           <div className="rounded-lg border overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead className="bg-zinc-100 dark:bg-zinc-900">
                 <tr>
+                  <th className="px-3 py-2 text-left">
+                    <input
+                      type="checkbox"
+                      checked={(() => { const selectable = files.filter(f => (f.capabilities?.canTrash || f.capabilities?.canDelete)).map(f => f.id); return selectable.length > 0 && selectedIds.length === selectable.length; })()}
+                      onChange={(e) => toggleSelectAll(e.target.checked)}
+                    />
+                  </th>
                   <th className="px-3 py-2 text-left">Name</th>
                   <th className="px-3 py-2 text-left">Type</th>
                   <th className="px-3 py-2 text-left">Size</th>
@@ -301,26 +1020,33 @@ export default function Home() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td className="px-3 py-4" colSpan={5}>Loading…</td></tr>
+                  <tr><td className="px-3 py-4" colSpan={6}>Loading…</td></tr>
                 ) : files.length === 0 ? (
-                  <tr><td className="px-3 py-4" colSpan={5}>No items</td></tr>
+                  <tr><td className="px-3 py-4" colSpan={6}>No items</td></tr>
                 ) : (
                   files.map((f) => {
                     const isFolder = f.mimeType === 'application/vnd.google-apps.folder';
                     return (
                       <tr key={f.id} className="border-t">
                         <td className="px-3 py-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(f.id)}
+                            onChange={(e) => toggleSelect(f.id, e.target.checked)}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
                           {isFolder ? (
                             <button className="underline" onClick={() => openFolder(f)}>
                               {f.name}
                             </button>
                           ) : f.mimeType === 'video/mp4' ? (
-                            <a
+                            <button
                               className="underline"
-                              href={`/watch/${encodeURIComponent(f.id)}?name=${encodeURIComponent(f.name)}`}
+                              onClick={() => openWatch(f)}
                             >
                               {f.name}
-                            </a>
+                            </button>
                           ) : (
                             <a className="underline" href={f.webViewLink || '#'} target="_blank" rel="noreferrer">
                               {f.name}
@@ -333,6 +1059,13 @@ export default function Home() {
                         <td className="px-3 py-2">
                           <div className="flex gap-2">
                             <button
+                              onClick={() => onRename(f)}
+                              className="rounded-md border px-2 py-1 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                              disabled={loading}
+                            >
+                              Rename
+                            </button>
+                            <button
                               onClick={() => onCopyLink(f)}
                               className="rounded-md border px-2 py-1 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-900"
                               disabled={loading}
@@ -341,8 +1074,8 @@ export default function Home() {
                             </button>
                             <button
                               onClick={() => onDelete(f.id)}
-                              className="rounded-md border px-2 py-1 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-900"
-                              disabled={loading}
+                              className="rounded-md border px-2 py-1 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-900 disabled:opacity-50"
+                              disabled={loading || !(f.capabilities?.canTrash || f.capabilities?.canDelete)}
                             >
                               Delete
                             </button>
