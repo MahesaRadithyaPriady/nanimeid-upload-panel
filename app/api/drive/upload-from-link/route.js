@@ -3,6 +3,7 @@ import { getDrive } from '../../../lib/drive';
 import { Readable } from 'stream';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 function guessNameFromUrl(u) {
   try {
@@ -74,12 +75,18 @@ export async function POST(request) {
       }
     }
 
-    return NextResponse.json({ results });
+    return NextResponse.json(
+      { results },
+      { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' } }
+    );
   } catch (err) {
     console.error('Upload from link error', {
       message: err?.message,
       stack: err?.stack,
     });
-    return NextResponse.json({ error: 'Failed to upload from link' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Failed to upload from link' },
+      { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' } }
+    );
   }
 }

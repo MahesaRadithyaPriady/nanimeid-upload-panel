@@ -3,6 +3,7 @@ import { getDrive } from '../../../lib/drive';
 import { Readable } from 'stream';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 async function ensureFolderPath(drive, parentId, relativePath) {
   if (!relativePath) return parentId;
@@ -75,7 +76,10 @@ export async function POST(request) {
       uploadType: 'multipart',
     });
 
-    return NextResponse.json({ file: res.data });
+    return NextResponse.json(
+      { file: res.data },
+      { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' } }
+    );
   } catch (err) {
     console.error('Drive upload error', {
       message: err?.message,
@@ -83,7 +87,10 @@ export async function POST(request) {
       response: err?.response?.data,
       errors: err?.errors,
     });
-    return NextResponse.json({ error: 'Failed to upload file', details: err?.response?.data || err?.message }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Failed to upload file', details: err?.response?.data || err?.message },
+      { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' } }
+    );
   }
 }
 

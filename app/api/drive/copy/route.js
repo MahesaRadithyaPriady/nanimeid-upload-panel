@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDrive } from '../../../lib/drive';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function POST(request) {
   try {
@@ -32,8 +33,14 @@ export async function POST(request) {
         results.push({ id, error: e?.message || 'Copy failed' });
       }
     }
-    return NextResponse.json({ results });
+    return NextResponse.json(
+      { results },
+      { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' } }
+    );
   } catch (err) {
-    return NextResponse.json({ error: err?.message || 'Failed to copy' }, { status: 500 });
+    return NextResponse.json(
+      { error: err?.message || 'Failed to copy' },
+      { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' } }
+    );
   }
 }

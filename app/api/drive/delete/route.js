@@ -2,13 +2,17 @@ import { NextResponse } from 'next/server';
 import { getDrive } from '../../../lib/drive';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function DELETE(request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     const permanent = searchParams.get('permanent') === 'true';
-    if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+    if (!id) return NextResponse.json(
+      { error: 'Missing id' },
+      { status: 400, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' } }
+    );
 
     const drive = getDrive();
     if (permanent) {
@@ -26,7 +30,10 @@ export async function DELETE(request) {
       // Soft delete (move to trash) by default
       await drive.files.update({ fileId: id, supportsAllDrives: true, requestBody: { trashed: true } });
     }
-    return NextResponse.json({ ok: true });
+    return NextResponse.json(
+      { ok: true },
+      { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' } }
+    );
   } catch (err) {
     console.error('Drive delete error', {
       message: err?.message,
@@ -36,6 +43,9 @@ export async function DELETE(request) {
     });
     const status = Number.isInteger(err?.code) ? err.code : 500;
     const msg = err?.errors?.[0]?.message || 'Failed to delete file';
-    return NextResponse.json({ error: msg }, { status });
+    return NextResponse.json(
+      { error: msg },
+      { status, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' } }
+    );
   }
 }

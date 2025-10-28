@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDrive } from '../../../lib/drive';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function GET(request) {
   try {
@@ -57,7 +58,10 @@ export async function GET(request) {
       }
     }
 
-    return NextResponse.json({ files: res.data.files || [], nextPageToken: res.data.nextPageToken || null });
+    return NextResponse.json(
+      { files: res.data.files || [], nextPageToken: res.data.nextPageToken || null },
+      { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' } }
+    );
   } catch (err) {
     console.error('Drive list error', {
       message: err?.message,
@@ -67,6 +71,9 @@ export async function GET(request) {
       code: err?.code,
     });
     const details = err?.response?.data || err?.errors || err?.message;
-    return NextResponse.json({ error: 'Failed to list files', details }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Failed to list files', details },
+      { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' } }
+    );
   }
 }

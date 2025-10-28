@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 function extractId(input) {
   if (!input) return null;
@@ -33,5 +34,8 @@ export async function GET(request) {
     return NextResponse.json({ error: 'Invalid Google Drive URL or ID' }, { status: 400 });
   }
   const to = `/watch/${encodeURIComponent(id)}${name ? `?name=${encodeURIComponent(name)}` : ''}`;
-  return NextResponse.redirect(to, 302);
+  const res = NextResponse.redirect(to, 302);
+  res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.headers.set('Pragma', 'no-cache');
+  return res;
 }

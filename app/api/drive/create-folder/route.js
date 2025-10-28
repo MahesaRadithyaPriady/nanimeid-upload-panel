@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDrive } from '../../../lib/drive';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function POST(request) {
   try {
@@ -20,7 +21,10 @@ export async function POST(request) {
       supportsAllDrives: true,
     });
 
-    return NextResponse.json({ folder: res.data });
+    return NextResponse.json(
+      { folder: res.data },
+      { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' } }
+    );
   } catch (err) {
     console.error('Drive create-folder error', {
       message: err?.message,
@@ -28,6 +32,9 @@ export async function POST(request) {
       response: err?.response?.data,
       errors: err?.errors,
     });
-    return NextResponse.json({ error: 'Failed to create folder', details: err?.response?.data || err?.message }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Failed to create folder', details: err?.response?.data || err?.message },
+      { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' } }
+    );
   }
 }
