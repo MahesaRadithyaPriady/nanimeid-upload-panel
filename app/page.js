@@ -705,8 +705,10 @@ export default function Home() {
 
   async function onCopyLink(f) {
     try {
+      const base = (process.env.NEXT_PUBLIC_STREAM_BASE_URL || '').replace(/\/$/, '');
       const origin = typeof window !== 'undefined' ? window.location.origin : '';
-      const url = `${origin}/api/drive/stream/${encodeURIComponent(f.id)}`;
+      const root = base || origin;
+      const url = `${root}/api/drive/stream/${encodeURIComponent(f.id)}`;
       await navigator.clipboard.writeText(url);
       setNotice('Proxy link disalin');
       setTimeout(() => setNotice(''), 2000);
