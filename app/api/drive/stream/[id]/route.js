@@ -4,16 +4,6 @@ import { Readable } from 'stream';
 
 export const runtime = 'nodejs';
 
-export function OPTIONS() {
-  const headers = new Headers();
-  headers.set('Access-Control-Allow-Origin', '*');
-  headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-  headers.set('Access-Control-Allow-Headers', 'Range, Accept, Origin');
-  headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
-  headers.set('Vary', 'Origin');
-  return new Response(null, { status: 204, headers });
-}
-
 export async function GET(request, { params }) {
   const url = new URL(request.url);
   const fromParams = params?.id;
@@ -63,10 +53,6 @@ export async function GET(request, { params }) {
         if (srcHeaders['etag']) headers.set('ETag', srcHeaders['etag']);
         if (srcHeaders['last-modified']) headers.set('Last-Modified', srcHeaders['last-modified']);
         headers.set('Vary', 'Range');
-        headers.set('Access-Control-Allow-Origin', '*');
-        headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-        headers.set('Access-Control-Allow-Headers', 'Range, Accept, Origin');
-        headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
         headers.set('Cache-Control', 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800');
         const status = range ? 206 : 200;
         const nodeStream = driveRes.data;
@@ -113,10 +99,6 @@ export async function GET(request, { params }) {
     if (srcEtag) headers.set('ETag', srcEtag);
     if (srcLM) headers.set('Last-Modified', srcLM);
     headers.set('Vary', 'Range');
-    headers.set('Access-Control-Allow-Origin', '*');
-    headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    headers.set('Access-Control-Allow-Headers', 'Range, Accept, Origin');
-    headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
     headers.set('Cache-Control', 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800');
     const status = range || srcRange ? 206 : 200;
     return new Response(res.body, { status, headers });

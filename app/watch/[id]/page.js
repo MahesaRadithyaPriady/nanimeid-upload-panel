@@ -17,10 +17,7 @@ export default function WatchPage() {
   const fromParam = qp.get('from') || '';
   const resourceKey = qp.get('resourceKey') || qp.get('resourcekey') || '';
   const title = nameParam ? nameParam : (id ? `Video ${id}` : 'Missing file id');
-  const streamBase = (process.env.NEXT_PUBLIC_STREAM_BASE_URL || '').replace(/\/$/, '');
-  const src = id
-    ? `${streamBase || ''}/api/drive/stream/${encodeURIComponent(id)}${resourceKey ? `?resourceKey=${encodeURIComponent(resourceKey)}` : ''}`
-    : '';
+  const src = id ? `/api/drive/stream/${encodeURIComponent(id)}${resourceKey ? `?resourceKey=${encodeURIComponent(resourceKey)}` : ''}` : '';
   const [meta, setMeta] = useState(null);
   const metaUrl = id ? `/api/drive/meta/${encodeURIComponent(id)}${resourceKey ? `?resourceKey=${encodeURIComponent(resourceKey)}` : ''}` : '';
 
