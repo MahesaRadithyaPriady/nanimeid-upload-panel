@@ -40,6 +40,7 @@ export default function Home() {
   const [prevTokens, setPrevTokens] = useState([]);
   const [order, setOrder] = useState('name_asc'); // name_asc | name_desc
   const [typeFilter, setTypeFilter] = useState('all'); // all | folder | file
+  const [encode, setEncode] = useState(true); // whether to encode videos after upload
   const [hasRestored, setHasRestored] = useState(false);
   const [wantRestorePath, setWantRestorePath] = useState(false);
   const fileInputRef = useRef(null);
@@ -446,6 +447,7 @@ export default function Home() {
       const globalIndex = uploads.length + idx;
       const fd = new FormData();
       fd.set('folderId', currentFolderId);
+      fd.set('encode', encode ? '1' : '0');
       fd.set('file', file, file.name);
       const xhr = new XMLHttpRequest();
       xhr.open('POST', '/api/drive/upload');
@@ -511,6 +513,7 @@ export default function Home() {
       const parts = (rel || '').split('/');
       const sub = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
       if (sub) fd.set('relativePath', sub);
+      fd.set('encode', encode ? '1' : '0');
       fd.set('file', file, file.name);
       const xhr = new XMLHttpRequest();
       xhr.open('POST', '/api/drive/upload');
@@ -940,6 +943,10 @@ export default function Home() {
         <section className="mt-6 grid gap-4 sm:grid-cols-2">
           <form onSubmit={onUploadFolder} className="rounded-lg border p-4">
             <h2 className="font-medium mb-2">Upload Folder</h2>
+            <div className="mt-1 mb-2 text-sm flex items-center gap-2">
+              <input id="encodeToggleFolder" type="checkbox" checked={encode} onChange={(e) => setEncode(e.target.checked)} />
+              <label htmlFor="encodeToggleFolder">Encode setelah upload</label>
+            </div>
             <input name="folder" type="file" className="block w-full text-sm" webkitdirectory="" directory="" />
             <button
               type="submit"
@@ -984,6 +991,10 @@ export default function Home() {
         <section className="mt-6 grid gap-4 sm:grid-cols-2">
           <form onSubmit={onUpload} className="rounded-lg border p-4">
             <h2 className="font-medium mb-2">Upload File</h2>
+            <div className="mt-1 mb-2 text-sm flex items-center gap-2">
+              <input id="encodeToggleFile" type="checkbox" checked={encode} onChange={(e) => setEncode(e.target.checked)} />
+              <label htmlFor="encodeToggleFile">Encode setelah upload</label>
+            </div>
             <input
               ref={fileInputRef}
               name="file"

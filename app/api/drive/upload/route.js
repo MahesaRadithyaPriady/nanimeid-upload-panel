@@ -74,6 +74,11 @@ export async function POST(request) {
     const folderId = form.get('folderId') || 'root';
     const file = form.get('file');
     const relativePath = (form.get('relativePath') || '').toString();
+    const encodeField = form.get('encode');
+    const wantEncode = (() => {
+      const v = (encodeField == null ? '1' : String(encodeField)).toLowerCase();
+      return !(v === '0' || v === 'false' || v === 'no');
+    })();
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
@@ -97,7 +102,7 @@ export async function POST(request) {
 
     const targetParentId = await ensureFolderPath(drive, folderId, relativePath);
 
-    if (!isVideo) {
+    if (!isVideo || !wantEncode) {
       const webStream = file.stream();
       const bodyStream = typeof Readable.fromWeb === 'function' ? Readable.fromWeb(webStream) : Readable.from(webStream);
       const direct = await drive.files.create({
