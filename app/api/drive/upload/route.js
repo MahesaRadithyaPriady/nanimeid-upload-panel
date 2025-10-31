@@ -268,11 +268,10 @@ export async function POST(request) {
           const t = outputs[i];
           console.log('[UploadJob] encode start', { jobId, rendition: `${t.height}p` });
           setProgress(jobId, { status: 'encoding', current: `${t.height}p`, done: i, total, percent: Math.round((i / total) * 100) });
-          // Scale to fit inside target box without upscaling, then pad to exact target canvas centered
-          // If video is wider than target aspect, fit width; else fit height. Avoid upscaling via min(iw, targetW) / min(ih, targetH)
+          // Scale down to fit within target without upscaling, then pad to exact canvas
           const vf = [
-            `scale=if(gt(a,${t.width}/${t.height}),min(iw,${t.width}),-2):if(gt(a,${t.width}/${t.height}),-2,min(ih,${t.height}))`,
-            `pad=${t.width}:${t.height}:(ow-iw)/2:(oh-ih)/2`
+            `scale=${t.width}:${t.height}:force_original_aspect_ratio=decrease`,
+            `pad=${t.width}:${t.height}:(ow-iw)/2:(oh-ih)/2:black`
           ].join(',');
           console.log('[UploadJob] ffmpeg vf', { jobId, vf, target: `${t.width}x${t.height}` });
           const args = [
