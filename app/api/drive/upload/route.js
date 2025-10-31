@@ -248,11 +248,17 @@ export async function POST(request) {
         const ffprobePath = await getFfprobePath();
         console.log('[UploadJob] ffprobe path', { jobId, ffprobePath });
         const ffprobeOk = await checkBinary(ffprobePath);
-        const targets = [1080, 720, 480, 360];
-        const outputs = targets.map((h) => ({
-          height: h,
-          outPath: path.join(tmpDir, `${baseName}_${h}p.mp4`),
-          outName: `${baseName}_${h}p.mp4`,
+        const renditions = [
+          { width: 1920, height: 1080 },
+          { width: 1280, height: 720 },
+          { width: 854, height: 480 },
+          { width: 640, height: 360 },
+        ];
+        const outputs = renditions.map((r) => ({
+          width: r.width,
+          height: r.height,
+          outPath: path.join(tmpDir, `${baseName}_${r.height}p.mp4`),
+          outName: `${baseName}_${r.height}p.mp4`,
         }));
 
         const total = outputs.length;
@@ -262,7 +268,13 @@ export async function POST(request) {
           const t = outputs[i];
           console.log('[UploadJob] encode start', { jobId, rendition: `${t.height}p` });
           setProgress(jobId, { status: 'encoding', current: `${t.height}p`, done: i, total, percent: Math.round((i / total) * 100) });
-          const vf = `scale='-2:${t.height}:force_original_aspect_ratio=decrease',pad='iw:ih:(ow-iw)/2:(oh-ih)/2'`;
+          // Scale to fit inside target box without upscaling, then pad to exact target canvas centered
+          // If video is wider than target aspect, fit width; else fit height. Avoid upscaling via min(iw, targetW) / min(ih, targetH)
+          const vf = [
+            `scale=if(gt(a,${t.width}/${t.height}),min(iw,${t.width}),-2):if(gt(a,${t.width}/${t.height}),-2,min(ih,${t.height}))`,
+            `pad=${t.width}:${t.height}:(ow-iw)/2:(oh-ih)/2`
+          ].join(',');
+          console.log('[UploadJob] ffmpeg vf', { jobId, vf, target: `${t.width}x${t.height}` });
           const args = [
             '-y', '-i', inputPath,
             '-vf', vf,
