@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 function bytesToSize(bytes) {
@@ -42,6 +42,7 @@ export default function Home() {
   const [typeFilter, setTypeFilter] = useState('all'); // all | folder | file
   const [hasRestored, setHasRestored] = useState(false);
   const [wantRestorePath, setWantRestorePath] = useState(false);
+  const fileInputRef = useRef(null);
 
   // Try to restore folderStack from URL ?path=... on first load
   useEffect(() => {
@@ -81,7 +82,9 @@ export default function Home() {
             pageToken = data.nextPageToken || null;
             if (!pageToken) break;
           }
+
   
+
           if (!found) break; // stop at deepest resolvable segment
           stack.push({ id: found.id, name: found.name });
           parentId = found.id;
@@ -101,6 +104,56 @@ export default function Home() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Poll backend encoding progress and update UI
+  async function pollEncoding(jobId, globalIndex, folderId) {
+    let lastPercent = 0;
+    while (true) {
+      let prog = null;
+      try {
+        const res = await fetch(`/api/drive/upload/progress?id=${encodeURIComponent(jobId)}`, { cache: 'no-store' });
+        prog = await res.json();
+      } catch (_) {
+        // network blip, retry shortly
+      }
+      if (!prog || prog.status === 'unknown') {
+        await new Promise(r => setTimeout(r, 800));
+        continue;
+      }
+
+      const percent = Math.max(0, Math.min(100, Number(prog.percent || 0)));
+      lastPercent = Math.max(lastPercent, percent);
+      try { console.log('[ClientUpload] poll', { jobId, status: prog.status, current: prog.current, percent: lastPercent }); } catch {}
+
+      if (prog.status === 'error') {
+        setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, status: 'error', error: prog.error || 'Encoding failed' } : it));
+        try { console.log('[ClientUpload] error', { jobId, error: prog.error }); } catch {}
+        break;
+      }
+
+      if (prog.status === 'done') {
+        setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, encodeProgress: 100, progress: 100, status: 'done' } : it));
+        await loadFiles(folderId);
+        try { console.log('[ClientUpload] done', { jobId }); } catch {}
+        break;
+      }
+
+      if (prog.status === 'encoding') {
+        const label = prog.current ? `encoding ${prog.current}` : 'encoding';
+        setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, encodeProgress: lastPercent, status: label } : it));
+        try { console.log('[ClientUpload] encoding', { jobId, label, percent: lastPercent }); } catch {}
+      } else if (prog.status === 'uploading') {
+        const label = prog.current ? `uploading ${prog.current}` : 'uploading';
+        setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, encodeProgress: lastPercent, status: label } : it));
+        try { console.log('[ClientUpload] uploading', { jobId, label, percent: lastPercent }); } catch {}
+      } else if (prog.status === 'preparing' || prog.status === 'progress') {
+        setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, encodeProgress: lastPercent, status: 'processing' } : it));
+        try { console.log('[ClientUpload] processing', { jobId, percent: lastPercent }); } catch {}
+      }
+
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  }
 
   const handleRestorePath = async () => {
     const url = new URL(window.location.href);
@@ -386,7 +439,7 @@ export default function Home() {
       return;
     }
     setError("");
-    const initial = selected.map(f => ({ name: f.name, progress: 0, status: 'uploading', error: '' }));
+    const initial = selected.map(f => ({ name: f.name, progress: 0, uploadProgress: 0, encodeProgress: 0, status: 'uploading', error: '' }));
     setUploads(prev => [...prev, ...initial]);
 
     await Promise.all(selected.map((file, idx) => new Promise((resolve) => {
@@ -399,7 +452,7 @@ export default function Home() {
       xhr.upload.onprogress = (ev) => {
         if (ev.lengthComputable) {
           const pct = Math.round((ev.loaded / ev.total) * 100);
-          setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, progress: pct, status: 'uploading' } : it));
+          setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, uploadProgress: pct, status: 'uploading' } : it));
         }
       };
       // bytes fully sent to our server
@@ -409,9 +462,18 @@ export default function Home() {
       xhr.onreadystatechange = async () => {
         if (xhr.readyState === 4) {
           if (xhr.status >= 200 && xhr.status < 300) {
-            setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, progress: 100, status: 'done' } : it));
-            await loadFiles(currentFolderId);
-            resolve();
+            let data = null;
+            try { data = JSON.parse(xhr.responseText); } catch {}
+            if (data && data.jobId) {
+              // encoding job started, poll progress
+              setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, uploadProgress: 100, status: 'processing' } : it));
+              await pollEncoding(data.jobId, globalIndex, currentFolderId);
+              resolve();
+            } else {
+              setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, uploadProgress: 100, encodeProgress: 100, progress: 100, status: 'done' } : it));
+              await loadFiles(currentFolderId);
+              resolve();
+            }
           } else {
             let msg = 'Upload failed';
             try { msg = JSON.parse(xhr.responseText).error || msg; } catch {}
@@ -438,7 +500,7 @@ export default function Home() {
       return;
     }
     setError("");
-    const initial = selected.map(f => ({ name: f.webkitRelativePath || f.name, progress: 0, status: 'uploading', error: '' }));
+    const initial = selected.map(f => ({ name: f.webkitRelativePath || f.name, progress: 0, uploadProgress: 0, encodeProgress: 0, status: 'uploading', error: '' }));
     setUploads(prev => [...prev, ...initial]);
 
     await Promise.all(selected.map((file, idx) => new Promise((resolve) => {
@@ -455,7 +517,7 @@ export default function Home() {
       xhr.upload.onprogress = (ev) => {
         if (ev.lengthComputable) {
           const pct = Math.round((ev.loaded / ev.total) * 100);
-          setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, progress: pct, status: 'uploading' } : it));
+          setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, uploadProgress: pct, status: 'uploading' } : it));
         }
       };
       xhr.upload.onload = () => {
@@ -464,9 +526,17 @@ export default function Home() {
       xhr.onreadystatechange = async () => {
         if (xhr.readyState === 4) {
           if (xhr.status >= 200 && xhr.status < 300) {
-            setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, progress: 100, status: 'done' } : it));
-            await loadFiles(currentFolderId);
-            resolve();
+            let data = null;
+            try { data = JSON.parse(xhr.responseText); } catch {}
+            if (data && data.jobId) {
+              setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, uploadProgress: 100, status: 'processing' } : it));
+              await pollEncoding(data.jobId, globalIndex, currentFolderId);
+              resolve();
+            } else {
+              setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, uploadProgress: 100, encodeProgress: 100, progress: 100, status: 'done' } : it));
+              await loadFiles(currentFolderId);
+              resolve();
+            }
           } else {
             let msg = 'Upload failed';
             try { msg = JSON.parse(xhr.responseText).error || msg; } catch {}
@@ -474,7 +544,8 @@ export default function Home() {
             resolve();
           }
         }
-      };
+      }
+
       xhr.send(fd);
     })));
 
@@ -913,7 +984,22 @@ export default function Home() {
         <section className="mt-6 grid gap-4 sm:grid-cols-2">
           <form onSubmit={onUpload} className="rounded-lg border p-4">
             <h2 className="font-medium mb-2">Upload File</h2>
-            <input name="file" type="file" className="block w-full text-sm" multiple accept="video/*" onChange={onSelectFiles} />
+            <input
+              ref={fileInputRef}
+              name="file"
+              type="file"
+              className="sr-only"
+              multiple
+              accept="video/*"
+              onChange={onSelectFiles}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current && fileInputRef.current.click()}
+              className="rounded-md border px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900"
+            >
+              Pilih Video
+            </button>
             {selectedTotal > 0 ? (
               <div className="mt-2 text-xs">
                 <div className="opacity-70">File terpilih (maks 3):</div>
@@ -935,16 +1021,26 @@ export default function Home() {
               Upload
             </button>
             {uploads.length > 0 ? (
-              <div className="mt-4 space-y-2">
+              <div className="mt-4 space-y-3">
                 {uploads.slice(-10).map((u, i) => (
-                  <div key={`${u.name}-${i}`} className="text-sm">
-                    <div className="flex justify-between"><span className="truncate max-w-[70%]">{u.name}</span><span>{u.progress}%</span></div>
+                  <div key={`${u.name}-${i}`} className="text-sm space-y-1">
+                    <div className="flex justify-between">
+                      <span className="truncate max-w-[70%]">{u.name}</span>
+                      <span>{Math.max(u.uploadProgress || 0, u.encodeProgress || 0)}%</span>
+                    </div>
+                    <div className="text-xs opacity-70">Upload</div>
                     <div className="h-2 bg-zinc-200 dark:bg-zinc-800 rounded">
-                      <div className="h-2 bg-blue-600 rounded" style={{ width: `${u.progress}%` }} />
+                      <div className="h-2 bg-blue-600 rounded" style={{ width: `${u.uploadProgress || 0}%` }} />
+                    </div>
+                    <div className="text-xs opacity-70 mt-1">Encode</div>
+                    <div className="h-2 bg-zinc-200 dark:bg-zinc-800 rounded">
+                      <div className="h-2 bg-purple-600 rounded" style={{ width: `${u.encodeProgress || 0}%` }} />
                     </div>
                     {u.status !== 'error' ? (
                       <div className="mt-1 text-xs opacity-70">
                         {u.status === 'uploading' && 'Mengunggah…'}
+                        {u.status && u.status.startsWith('encoding') && `Mengenkode (${u.status.split(' ')[1] || ''})…`}
+                        {u.status && u.status.startsWith('uploading') && `Mengunggah (${u.status.split(' ')[1] || ''})…`}
                         {u.status === 'processing' && 'Memproses di server…'}
                         {u.status === 'done' && 'Selesai'}
                       </div>
