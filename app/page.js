@@ -17,6 +17,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [linkJobs, setLinkJobs] = useState([]); // {url, status: 'pending'|'processing'|'done'|'error', error?: string}
+  const [linkText, setLinkText] = useState("");
   const [showDestModal, setShowDestModal] = useState(false);
   const [bulkAction, setBulkAction] = useState(null); // 'copy' | 'move'
   const [destStack, setDestStack] = useState([]); // [{id,name}]
@@ -44,6 +45,16 @@ export default function Home() {
   const [hasRestored, setHasRestored] = useState(false);
   const [wantRestorePath, setWantRestorePath] = useState(false);
   const fileInputRef = useRef(null);
+
+  const hasPixeldrain = useMemo(() => {
+    return /(?:https?:\/\/)?(?:www\.)?pixeldrain\.com\/u\/[A-Za-z0-9_-]+/i.test(linkText || "");
+  }, [linkText]);
+
+  function transformPixeldrainLinks(text) {
+    if (!text) return text;
+    const re = /https?:\/\/(?:www\.)?pixeldrain\.com\/u\/([A-Za-z0-9_-]+)/gi;
+    return text.replace(re, (m, id) => `https://pixeldrain.com/api/file/${id}`);
+  }
 
   // Try to restore folderStack from URL ?path=... on first load
   useEffect(() => {
@@ -558,8 +569,7 @@ export default function Home() {
   async function onUploadLinks(e) {
     e.preventDefault();
     const formEl = e.currentTarget;
-    const textarea = formEl.querySelector('textarea[name="links"]');
-    const lines = (textarea.value || '').split('\n').map(s => s.trim()).filter(Boolean);
+    const lines = (linkText || '').split('\n').map(s => s.trim()).filter(Boolean);
     if (lines.length === 0) {
       setError('Masukkan minimal satu URL');
       return;
@@ -595,7 +605,7 @@ export default function Home() {
       if (failCount === 0) {
         setNotice('Semua link berhasil diunggah');
         setTimeout(() => setNotice(''), 2000);
-        formEl.reset();
+        setLinkText('');
       } else {
         setError(`${failCount} dari ${jobs.length} link gagal diunggah`);
       }
@@ -959,14 +969,26 @@ export default function Home() {
 
           <form onSubmit={onUploadLinks} className="rounded-lg border p-4">
             <h2 className="font-medium mb-2">Upload via Link</h2>
-            <textarea name="links" className="w-full rounded border px-3 py-2 text-sm bg-white dark:bg-zinc-900" rows="5" placeholder="Tempel beberapa URL, satu per baris" />
-            <button
-              type="submit"
-              className="mt-3 rounded-md bg-black px-4 py-2 text-white dark:bg-white dark:text-black disabled:opacity-50"
-              disabled={loading}
-            >
-              Upload Links
-            </button>
+            <textarea name="links" value={linkText} onChange={(e) => setLinkText(e.target.value)} className="w-full rounded border px-3 py-2 text-sm bg-white dark:bg-zinc-900" rows="5" placeholder="Tempel beberapa URL, satu per baris" />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="submit"
+                className="rounded-md bg-black px-4 py-2 text-white dark:bg-white dark:text-black disabled:opacity-50"
+                disabled={loading}
+              >
+                Upload Links
+              </button>
+              {hasPixeldrain ? (
+                <button
+                  type="button"
+                  onClick={() => setLinkText(transformPixeldrainLinks(linkText))}
+                  className="rounded-md border px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                  disabled={loading}
+                >
+                  Sync Pixeldrain
+                </button>
+              ) : null}
+            </div>
             {linkJobs.length > 0 ? (
               <div className="mt-3 space-y-2 text-xs">
                 <div className="opacity-70">Progress: {linkJobs.filter(j => j.status === 'done').length}/{linkJobs.length} selesai</div>
