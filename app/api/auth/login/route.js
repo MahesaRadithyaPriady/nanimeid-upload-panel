@@ -23,9 +23,10 @@ export async function POST(req) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const msg = data?.error || 'Login failed';
+      const msg = data?.message || data?.error || 'Login gagal';
+      const code = data?.code || 'Error';
       return NextResponse.json(
-        { error: msg },
+        { success: false, code, message: msg },
         { status: res.status, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', Pragma: 'no-cache' } }
       );
     }
@@ -34,7 +35,7 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Missing token from auth response' }, { status: 500 });
     }
     const response = NextResponse.json(
-      { ok: true },
+      { success: true, code: 'OK', message: 'Login berhasil' },
       { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', Pragma: 'no-cache' } }
     );
     response.cookies.set('admin_token', token, {
@@ -47,7 +48,7 @@ export async function POST(req) {
     return response;
   } catch (e) {
     return NextResponse.json(
-      { error: 'Unexpected error' },
+      { success: false, code: 'UnexpectedError', message: 'Unexpected error' },
       { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', Pragma: 'no-cache' } }
     );
   }

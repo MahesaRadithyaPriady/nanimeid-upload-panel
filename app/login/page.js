@@ -22,12 +22,12 @@ export default function LoginPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data?.error || 'Login failed');
+        setError(data?.message || data?.error || 'Login gagal');
         return;
       }
       router.push('/');
     } catch (_) {
-      setError('Login failed');
+      setError('Login gagal');
     } finally {
       setLoading(false);
     }

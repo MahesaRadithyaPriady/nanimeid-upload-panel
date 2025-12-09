@@ -8,3 +8,9 @@ export async function POST() {
   response.cookies.set('admin_token', '', { httpOnly: true, path: '/', maxAge: 0 });
   return response;
 }
+
+export async function GET(req) {
+  const response = NextResponse.redirect(new URL('/', req.url));
+  response.cookies.set('admin_token', '', { httpOnly: true, path: '/', maxAge: 0 });
+  return response;
+}
