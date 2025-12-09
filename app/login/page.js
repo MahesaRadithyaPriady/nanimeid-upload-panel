@@ -21,6 +21,7 @@ export default function LoginPage() {
         body: JSON.stringify({ username, password })
       });
       const data = await res.json().catch(() => ({}));
+      console.log('Login response', { status: res.status, ok: res.ok, data });
       if (!res.ok) {
         setError(data?.message || data?.error || 'Login gagal');
         return;
