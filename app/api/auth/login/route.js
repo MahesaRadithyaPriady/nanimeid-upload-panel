@@ -22,17 +22,33 @@ export async function POST(req) {
         { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', Pragma: 'no-cache' } }
       );
     }
-    const res = await fetch(`${base.replace(/\/$/, '')}/admin/auth/login`, {
+    const upstreamUrl = `${base.replace(/\/$/, '')}/admin/auth/login`;
+    const res = await fetch(upstreamUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password })
     });
     const data = await res.json().catch(() => ({}));
+    try {
+      console.log('[auth/login] upstream response', {
+        url: upstreamUrl,
+        status: res.status,
+        body: data,
+      });
+    } catch (_) {
+      // ignore log errors
+    }
     if (!res.ok) {
       const msg = data?.message || data?.error || 'Login gagal';
       const code = data?.code || 'Error';
       return NextResponse.json(
-        { success: false, code, message: msg },
+        {
+          success: false,
+          code,
+          message: msg,
+          upstreamStatus: res.status,
+          upstreamBody: process.env.NODE_ENV !== 'production' ? data : undefined,
+        },
         { status: res.status, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', Pragma: 'no-cache' } }
       );
     }
