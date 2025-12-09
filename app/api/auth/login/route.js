@@ -10,6 +10,12 @@ export async function POST(req) {
       );
     }
     const base = process.env.ADMIN_API_BASE;
+    try {
+      // Debug: log base URL saat route dipanggil
+      console.log('[auth/login] ADMIN_API_BASE =', base);
+    } catch (_) {
+      // ignore log errors
+    }
     if (!base) {
       return NextResponse.json(
         { error: 'ADMIN_API_BASE is not configured' },
