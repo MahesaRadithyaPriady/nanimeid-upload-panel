@@ -15,13 +15,7 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
-      const base = process.env.NEXT_PUBLIC_ADMIN_API_BASE?.replace(/\/$/, '');
-      if (!base) {
-        setError('Konfigurasi NEXT_PUBLIC_ADMIN_API_BASE belum di-set');
-        return;
-      }
-
-      const res = await fetch(`${base}/admin/auth/login`, {
+      const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
@@ -32,11 +26,13 @@ export default function LoginPage() {
         return;
       }
       const token = data?.token || data?.accessToken || data?.access_token;
-      if (!token) {
-        setError('Token tidak ditemukan di response login');
-        return;
+      if (token) {
+        try {
+          window.localStorage.setItem('admin_token', token);
+        } catch (_) {
+          // abaikan error localStorage
+        }
       }
-
       router.push('/');
     } catch (_) {
       setError('Login gagal');

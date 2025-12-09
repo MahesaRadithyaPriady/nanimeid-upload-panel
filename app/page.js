@@ -46,6 +46,19 @@ export default function Home() {
   const [wantRestorePath, setWantRestorePath] = useState(false);
   const fileInputRef = useRef(null);
 
+  // Jika token tidak ada di localStorage, paksa kembali ke halaman login
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const token = window.localStorage.getItem('admin_token');
+      if (!token) {
+        router.replace('/login');
+      }
+    } catch (_) {
+      router.replace('/login');
+    }
+  }, [router]);
+
   const hasPixeldrain = useMemo(() => {
     return /(?:https?:\/\/)?(?:www\.)?pixeldrain\.com\/u\/[A-Za-z0-9_-]+/i.test(linkText || "");
   }, [linkText]);
@@ -414,6 +427,10 @@ export default function Home() {
       if (typeFilter) sp.set('type', typeFilter);
       const res = await fetch(`/api/drive/list?${sp.toString()}`);
       const data = await res.json();
+      if (res.status === 403) {
+        router.replace('/login');
+        return;
+      }
       if (!res.ok) throw new Error(data.error || "Failed to load files");
       setFiles(data.files || []);
       setNextToken(data.nextPageToken || null);

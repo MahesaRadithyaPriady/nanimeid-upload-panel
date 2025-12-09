@@ -35,7 +35,7 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Missing token from auth response' }, { status: 500 });
     }
     const response = NextResponse.json(
-      { success: true, code: 'OK', message: 'Login berhasil' },
+      { success: true, code: 'OK', message: 'Login berhasil', token, admin: data?.admin ?? null },
       { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', Pragma: 'no-cache' } }
     );
     response.cookies.set('admin_token', token, {
