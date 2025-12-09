@@ -15,19 +15,12 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
-      const base = process.env.NEXT_PUBLIC_ADMIN_API_BASE;
-      if (!base) {
-        setError('ADMIN API belum dikonfigurasi');
-        return;
-      }
-
-      const res = await fetch(`${base.replace(/\/$/, '')}/admin/auth/login`, {
+      const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
       });
       const data = await res.json().catch(() => ({}));
-      console.log('Login response', { status: res.status, ok: res.ok, data });
       if (!res.ok) {
         setError(data?.message || data?.error || 'Login gagal');
         return;
