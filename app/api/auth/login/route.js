@@ -28,12 +28,18 @@ export async function POST(req) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password })
     });
-    const data = await res.json().catch(() => ({}));
+    const raw = await res.text();
+    let data = {};
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch (_) {
+      data = {};
+    }
     try {
       console.log('[auth/login] upstream response', {
         url: upstreamUrl,
         status: res.status,
-        body: data,
+        raw,
       });
     } catch (_) {
       // ignore log errors
@@ -47,7 +53,7 @@ export async function POST(req) {
           code,
           message: msg,
           upstreamStatus: res.status,
-          upstreamBody: process.env.NODE_ENV !== 'production' ? data : undefined,
+          upstreamRaw: process.env.NODE_ENV !== 'production' ? raw : undefined,
         },
         { status: res.status, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', Pragma: 'no-cache' } }
       );
