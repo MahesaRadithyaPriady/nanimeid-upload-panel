@@ -22,7 +22,9 @@ export default function LoginPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data?.message || data?.error || 'Login gagal');
+        const baseMessage = data?.message || data?.error || `Login gagal (status ${res.status})`;
+        const prefix = data?.code ? `${data.code}: ` : '';
+        setError(prefix + baseMessage);
         return;
       }
       const token = data?.token || data?.accessToken || data?.access_token;
