@@ -47,12 +47,13 @@ export default function Home() {
   const fileInputRef = useRef(null);
   const backendBase = (process.env.NEXT_PUBLIC_BACKEND_API_BASE || 'http://localhost:4000').replace(/\/$/, '');
 
-  // Jika token tidak ada di localStorage, paksa kembali ke halaman login
+  // Guard: jika cookie admin_token tidak ada, paksa kembali ke halaman login
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof document === 'undefined') return;
     try {
-      const token = window.localStorage.getItem('admin_token');
-      if (!token) {
+      const cookies = document.cookie || '';
+      const hasAdmin = cookies.split(';').some((part) => part.trim().startsWith('admin_token='));
+      if (!hasAdmin) {
         router.replace('/login');
       }
     } catch (_) {

@@ -87,7 +87,8 @@ export async function loginController(request, reply) {
         Pragma: 'no-cache',
       })
       .setCookie('admin_token', token, {
-        httpOnly: true,
+        // Biarkan dapat diakses FE agar bisa dibaca via document.cookie
+        httpOnly: false,
         sameSite: 'lax',
         secure: process.env.NODE_ENV === 'production',
         path: '/',
