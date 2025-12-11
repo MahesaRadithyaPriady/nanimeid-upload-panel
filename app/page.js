@@ -98,7 +98,7 @@ export default function Home() {
             sp.set('type', 'folder');
             sp.set('order', 'name_asc');
             if (pageToken) sp.set('pageToken', pageToken);
-            const res = await fetch(`/api/drive/list?${sp.toString()}`, { cache: 'no-store' });
+            const res = await fetch(`http://localhost:4000/drive/list?${sp.toString()}`, { cache: 'no-store' });
             const data = await res.json();
             if (!res.ok) throw new Error(data?.error || 'Failed to resolve path');
             const segNorm = (seg || '').trim();
@@ -136,7 +136,9 @@ export default function Home() {
     while (true) {
       let prog = null;
       try {
-        const res = await fetch(`/api/drive/upload/progress?id=${encodeURIComponent(jobId)}`, { cache: 'no-store' });
+        const res = await fetch(`http://localhost:4000/drive/upload/progress?id=${encodeURIComponent(jobId)}`, {
+          cache: 'no-store',
+        });
         prog = await res.json();
       } catch (_) {
         // network blip, retry shortly
@@ -203,7 +205,7 @@ export default function Home() {
         sp.set('type', 'folder');
         sp.set('order', 'name_asc');
         if (pageToken) sp.set('pageToken', pageToken);
-        const res = await fetch(`/api/drive/list?${sp.toString()}`, { cache: 'no-store' });
+        const res = await fetch(`http://localhost:4000/drive/list?${sp.toString()}`, { cache: 'no-store' });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error || 'Failed to resolve path');
         const segNorm = (seg || '').trim();
@@ -232,7 +234,7 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch('/api/drive/rename', {
+      const res = await fetch('http://localhost:4000/drive/rename', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: f.id, name: name.trim() })
@@ -265,7 +267,7 @@ export default function Home() {
     setLoading(true);
     setError('');
     try {
-      const endpoint = bulkAction === 'copy' ? '/api/drive/copy' : '/api/drive/move';
+      const endpoint = bulkAction === 'copy' ? 'http://localhost:4000/drive/copy' : 'http://localhost:4000/drive/move';
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -312,7 +314,7 @@ export default function Home() {
       const search = searchOverride !== undefined ? searchOverride : destQuery;
       if (search) sp.set('search', search);
       if (token) sp.set('pageToken', token);
-      const res = await fetch(`/api/drive/list?${sp.toString()}`, { cache: 'no-store' });
+      const res = await fetch(`http://localhost:4000/drive/list?${sp.toString()}`, { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed to load folders');
       setDestFolders(data.files || []);
@@ -377,7 +379,7 @@ export default function Home() {
     const parentId = destStack[destStack.length - 1].id;
     setDestLoading(true);
     try {
-      const res = await fetch('/api/drive/create-folder', {
+      const res = await fetch('http://localhost:4000/drive/create-folder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, parentId }),
@@ -403,7 +405,7 @@ export default function Home() {
     if (!confirm('Hapus folder ini?')) return;
     setDestLoading(true);
     try {
-      const res = await fetch(`/api/drive/delete?id=${encodeURIComponent(f.id)}`, { method: 'DELETE' });
+      const res = await fetch(`http://localhost:4000/drive/delete?id=${encodeURIComponent(f.id)}`, { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Delete failed');
       const id = destStack[destStack.length - 1].id;
@@ -425,7 +427,7 @@ export default function Home() {
       if (token) sp.set('pageToken', token);
       if (order) sp.set('order', order);
       if (typeFilter) sp.set('type', typeFilter);
-      const res = await fetch(`/api/drive/list?${sp.toString()}`);
+      const res = await fetch(`http://localhost:4000/drive/list?${sp.toString()}`);
       const data = await res.json();
       if (res.status === 403) {
         router.replace('/login');
@@ -471,49 +473,53 @@ export default function Home() {
     const initial = selected.map(f => ({ name: f.name, progress: 0, uploadProgress: 0, encodeProgress: 0, status: 'uploading', error: '' }));
     setUploads(prev => [...prev, ...initial]);
 
-    await Promise.all(selected.map((file, idx) => new Promise((resolve) => {
+    // Proses upload satu per satu agar encode dan IO tidak bertabrakan
+    for (let idx = 0; idx < selected.length; idx++) {
+      const file = selected[idx];
+      // globalIndex dihitung terhadap uploads saat ini + offset idx
       const globalIndex = uploads.length + idx;
-      const fd = new FormData();
-      fd.set('folderId', currentFolderId);
-      fd.set('encode', encode ? '1' : '0');
-      fd.set('file', file, file.name);
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/api/drive/upload');
-      xhr.upload.onprogress = (ev) => {
-        if (ev.lengthComputable) {
-          const pct = Math.round((ev.loaded / ev.total) * 100);
-          setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, uploadProgress: pct, status: 'uploading' } : it));
-        }
-      };
-      // bytes fully sent to our server
-      xhr.upload.onload = () => {
-        setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, status: 'processing' } : it));
-      };
-      xhr.onreadystatechange = async () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            let data = null;
-            try { data = JSON.parse(xhr.responseText); } catch {}
-            if (data && data.jobId) {
-              // encoding job started, poll progress
-              setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, uploadProgress: 100, status: 'processing' } : it));
-              await pollEncoding(data.jobId, globalIndex, currentFolderId);
-              resolve();
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => {
+        const fd = new FormData();
+        fd.set('folderId', currentFolderId);
+        fd.set('encode', encode ? '1' : '0');
+        fd.set('file', file, file.name);
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', 'http://localhost:4000/drive/upload');
+        xhr.upload.onprogress = (ev) => {
+          if (ev.lengthComputable) {
+            const pct = Math.round((ev.loaded / ev.total) * 100);
+            setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, uploadProgress: pct, status: 'uploading' } : it));
+          }
+        };
+        xhr.upload.onload = () => {
+          setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, status: 'processing' } : it));
+        };
+        xhr.onreadystatechange = async () => {
+          if (xhr.readyState === 4) {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              let data = null;
+              try { data = JSON.parse(xhr.responseText); } catch {}
+              if (data && data.jobId) {
+                setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, uploadProgress: 100, status: 'processing' } : it));
+                await pollEncoding(data.jobId, globalIndex, currentFolderId);
+                resolve();
+              } else {
+                setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, uploadProgress: 100, encodeProgress: 100, progress: 100, status: 'done' } : it));
+                await loadFiles(currentFolderId);
+                resolve();
+              }
             } else {
-              setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, uploadProgress: 100, encodeProgress: 100, progress: 100, status: 'done' } : it));
-              await loadFiles(currentFolderId);
+              let msg = 'Upload failed';
+              try { msg = JSON.parse(xhr.responseText).error || msg; } catch {}
+              setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, status: 'error', error: msg } : it));
               resolve();
             }
-          } else {
-            let msg = 'Upload failed';
-            try { msg = JSON.parse(xhr.responseText).error || msg; } catch {}
-            setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, status: 'error', error: msg } : it));
-            resolve();
           }
-        }
-      };
-      xhr.send(fd);
-    })))
+        };
+        xhr.send(fd);
+      });
+    }
 
     formEl.reset();
     setSelectedNames([]);
@@ -533,52 +539,57 @@ export default function Home() {
     const initial = selected.map(f => ({ name: f.webkitRelativePath || f.name, progress: 0, uploadProgress: 0, encodeProgress: 0, status: 'uploading', error: '' }));
     setUploads(prev => [...prev, ...initial]);
 
-    await Promise.all(selected.map((file, idx) => new Promise((resolve) => {
+    // Proses upload folder satu per satu agar encoding tidak paralel berlebihan
+    for (let idx = 0; idx < selected.length; idx++) {
+      const file = selected[idx];
       const globalIndex = uploads.length + idx;
-      const fd = new FormData();
-      fd.set('folderId', currentFolderId);
-      const rel = file.webkitRelativePath || file.name;
-      const parts = (rel || '').split('/');
-      const sub = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
-      if (sub) fd.set('relativePath', sub);
-      fd.set('encode', encode ? '1' : '0');
-      fd.set('file', file, file.name);
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/api/drive/upload');
-      xhr.upload.onprogress = (ev) => {
-        if (ev.lengthComputable) {
-          const pct = Math.round((ev.loaded / ev.total) * 100);
-          setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, uploadProgress: pct, status: 'uploading' } : it));
-        }
-      };
-      xhr.upload.onload = () => {
-        setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, status: 'processing' } : it));
-      };
-      xhr.onreadystatechange = async () => {
-        if (xhr.readyState === 4) {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            let data = null;
-            try { data = JSON.parse(xhr.responseText); } catch {}
-            if (data && data.jobId) {
-              setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, uploadProgress: 100, status: 'processing' } : it));
-              await pollEncoding(data.jobId, globalIndex, currentFolderId);
-              resolve();
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => {
+        const fd = new FormData();
+        fd.set('folderId', currentFolderId);
+        const rel = file.webkitRelativePath || file.name;
+        const parts = (rel || '').split('/');
+        const sub = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
+        if (sub) fd.set('relativePath', sub);
+        fd.set('encode', encode ? '1' : '0');
+        fd.set('file', file, file.name);
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', 'http://localhost:4000/drive/upload');
+        xhr.upload.onprogress = (ev) => {
+          if (ev.lengthComputable) {
+            const pct = Math.round((ev.loaded / ev.total) * 100);
+            setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, uploadProgress: pct, status: 'uploading' } : it));
+          }
+        };
+        xhr.upload.onload = () => {
+          setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, status: 'processing' } : it));
+        };
+        xhr.onreadystatechange = async () => {
+          if (xhr.readyState === 4) {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              let data = null;
+              try { data = JSON.parse(xhr.responseText); } catch {}
+              if (data && data.jobId) {
+                setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, uploadProgress: 100, status: 'processing' } : it));
+                await pollEncoding(data.jobId, globalIndex, currentFolderId);
+                resolve();
+              } else {
+                setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, uploadProgress: 100, encodeProgress: 100, progress: 100, status: 'done' } : it));
+                await loadFiles(currentFolderId);
+                resolve();
+              }
             } else {
-              setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, uploadProgress: 100, encodeProgress: 100, progress: 100, status: 'done' } : it));
-              await loadFiles(currentFolderId);
+              let msg = 'Upload failed';
+              try { msg = JSON.parse(xhr.responseText).error || msg; } catch {}
+              setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, status: 'error', error: msg } : it));
               resolve();
             }
-          } else {
-            let msg = 'Upload failed';
-            try { msg = JSON.parse(xhr.responseText).error || msg; } catch {}
-            setUploads(u => u.map((it, i) => i === globalIndex ? { ...it, status: 'error', error: msg } : it));
-            resolve();
           }
-        }
-      }
+        };
 
-      xhr.send(fd);
-    })));
+        xhr.send(fd);
+      });
+    }
 
     formEl.reset();
   }
@@ -603,7 +614,7 @@ export default function Home() {
       for (let i = 0; i < jobs.length; i++) {
         setLinkJobs(prev => prev.map((j, idx) => idx === i ? { ...j, status: 'processing', error: '' } : j));
         try {
-          const res = await fetch('/api/drive/upload-from-link', {
+          const res = await fetch('http://localhost:4000/drive/upload-from-link', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url: jobs[i].url, folderId: currentFolderId }),
@@ -642,7 +653,7 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/drive/delete?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      const res = await fetch(`http://localhost:4000/drive/delete?id=${encodeURIComponent(id)}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Delete failed");
       await loadFiles(currentFolderId);
@@ -661,7 +672,7 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/drive/create-folder", {
+      const res = await fetch("http://localhost:4000/drive/create-folder", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, parentId: currentFolderId }),
@@ -770,7 +781,9 @@ export default function Home() {
       }
 
       const results = await Promise.allSettled(
-        allowedIds.map((id) => fetch(`/api/drive/delete?id=${encodeURIComponent(id)}`, { method: "DELETE" }))
+        allowedIds.map((id) =>
+          fetch(`http://localhost:4000/drive/delete?id=${encodeURIComponent(id)}`, { method: "DELETE" }),
+        ),
       );
       const failures = [];
       for (const r of results) {
@@ -806,11 +819,14 @@ export default function Home() {
 
   async function onCopyLink(f) {
     try {
-      const origin = typeof window !== 'undefined' ? window.location.origin : '';
-      const url = `${origin}/api/drive/stream/${encodeURIComponent(f.id)}`;
+      // Gunakan langsung backend/stream base agar hasil copy sudah berupa URL CDN/backend,
+      // bukan origin Next.js panel.
+      const base = process.env.NEXT_PUBLIC_STREAM_BASE || 'http://localhost:4000';
+      const normalizedBase = base.replace(/\/$/, '');
+      const url = `${normalizedBase}/drive/stream/${encodeURIComponent(f.id)}`;
       await navigator.clipboard.writeText(url);
-      setNotice('Proxy link disalin');
-      setTimeout(() => setNotice(''), 2000);
+      setNotice('Link copied');
+      setTimeout(() => setNotice(''), 1500);
     } catch (e) {
       setError('Gagal menyalin link');
     }
