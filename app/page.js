@@ -45,6 +45,7 @@ export default function Home() {
   const [hasRestored, setHasRestored] = useState(false);
   const [wantRestorePath, setWantRestorePath] = useState(false);
   const fileInputRef = useRef(null);
+  const backendBase = (process.env.NEXT_PUBLIC_BACKEND_API_BASE || 'http://localhost:4000').replace(/\/$/, '');
 
   // Jika token tidak ada di localStorage, paksa kembali ke halaman login
   useEffect(() => {
@@ -205,7 +206,7 @@ export default function Home() {
         sp.set('type', 'folder');
         sp.set('order', 'name_asc');
         if (pageToken) sp.set('pageToken', pageToken);
-        const res = await fetch(`http://localhost:4000/drive/list?${sp.toString()}`, { cache: 'no-store' });
+        const res = await fetch(`${backendBase}/drive/list?${sp.toString()}`, { cache: 'no-store' });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error || 'Failed to resolve path');
         const segNorm = (seg || '').trim();
@@ -314,7 +315,7 @@ export default function Home() {
       const search = searchOverride !== undefined ? searchOverride : destQuery;
       if (search) sp.set('search', search);
       if (token) sp.set('pageToken', token);
-      const res = await fetch(`http://localhost:4000/drive/list?${sp.toString()}`, { cache: 'no-store' });
+      const res = await fetch(`${backendBase}/drive/list?${sp.toString()}`, { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed to load folders');
       setDestFolders(data.files || []);
@@ -379,7 +380,7 @@ export default function Home() {
     const parentId = destStack[destStack.length - 1].id;
     setDestLoading(true);
     try {
-      const res = await fetch('http://localhost:4000/drive/create-folder', {
+      const res = await fetch(`${backendBase}/drive/create-folder`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, parentId }),
@@ -405,7 +406,7 @@ export default function Home() {
     if (!confirm('Hapus folder ini?')) return;
     setDestLoading(true);
     try {
-      const res = await fetch(`http://localhost:4000/drive/delete?id=${encodeURIComponent(f.id)}`, { method: 'DELETE' });
+      const res = await fetch(`${backendBase}/drive/delete?id=${encodeURIComponent(f.id)}`, { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Delete failed');
       const id = destStack[destStack.length - 1].id;
@@ -554,7 +555,7 @@ export default function Home() {
         fd.set('encode', encode ? '1' : '0');
         fd.set('file', file, file.name);
         const xhr = new XMLHttpRequest();
-        xhr.open('POST', 'http://localhost:4000/drive/upload');
+        xhr.open('POST', `${backendBase}/drive/upload`);
         xhr.upload.onprogress = (ev) => {
           if (ev.lengthComputable) {
             const pct = Math.round((ev.loaded / ev.total) * 100);
