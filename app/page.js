@@ -98,7 +98,7 @@ export default function Home() {
             sp.set('type', 'folder');
             sp.set('order', 'name_asc');
             if (pageToken) sp.set('pageToken', pageToken);
-            const res = await fetch(`http://localhost:4000/drive/list?${sp.toString()}`, { cache: 'no-store' });
+            const res = await fetch(`${backendBase}/drive/list?${sp.toString()}`, { cache: 'no-store' });
             const data = await res.json();
             if (!res.ok) throw new Error(data?.error || 'Failed to resolve path');
             const segNorm = (seg || '').trim();
@@ -136,7 +136,7 @@ export default function Home() {
     while (true) {
       let prog = null;
       try {
-        const res = await fetch(`http://localhost:4000/drive/upload/progress?id=${encodeURIComponent(jobId)}`, {
+        const res = await fetch(`${backendBase}/drive/upload/progress?id=${encodeURIComponent(jobId)}`, {
           cache: 'no-store',
         });
         prog = await res.json();
@@ -234,7 +234,7 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch('http://localhost:4000/drive/rename', {
+      const res = await fetch(`${backendBase}/drive/rename`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: f.id, name: name.trim() })
@@ -267,7 +267,7 @@ export default function Home() {
     setLoading(true);
     setError('');
     try {
-      const endpoint = bulkAction === 'copy' ? 'http://localhost:4000/drive/copy' : 'http://localhost:4000/drive/move';
+      const endpoint = bulkAction === 'copy' ? `${backendBase}/drive/copy` : `${backendBase}/drive/move`;
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -427,7 +427,7 @@ export default function Home() {
       if (token) sp.set('pageToken', token);
       if (order) sp.set('order', order);
       if (typeFilter) sp.set('type', typeFilter);
-      const res = await fetch(`http://localhost:4000/drive/list?${sp.toString()}`);
+      const res = await fetch(`${backendBase}/drive/list?${sp.toString()}`);
       const data = await res.json();
       if (res.status === 403) {
         router.replace('/login');
@@ -485,7 +485,7 @@ export default function Home() {
         fd.set('encode', encode ? '1' : '0');
         fd.set('file', file, file.name);
         const xhr = new XMLHttpRequest();
-        xhr.open('POST', 'http://localhost:4000/drive/upload');
+        xhr.open('POST', `${backendBase}/drive/upload`);
         xhr.upload.onprogress = (ev) => {
           if (ev.lengthComputable) {
             const pct = Math.round((ev.loaded / ev.total) * 100);
@@ -614,7 +614,7 @@ export default function Home() {
       for (let i = 0; i < jobs.length; i++) {
         setLinkJobs(prev => prev.map((j, idx) => idx === i ? { ...j, status: 'processing', error: '' } : j));
         try {
-          const res = await fetch('http://localhost:4000/drive/upload-from-link', {
+          const res = await fetch(`${backendBase}/drive/upload-from-link`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url: jobs[i].url, folderId: currentFolderId }),
@@ -653,7 +653,7 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`http://localhost:4000/drive/delete?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      const res = await fetch(`${backendBase}/drive/delete?id=${encodeURIComponent(id)}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Delete failed");
       await loadFiles(currentFolderId);
@@ -672,7 +672,7 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("http://localhost:4000/drive/create-folder", {
+      const res = await fetch(`${backendBase}/drive/create-folder`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, parentId: currentFolderId }),
@@ -782,7 +782,7 @@ export default function Home() {
 
       const results = await Promise.allSettled(
         allowedIds.map((id) =>
-          fetch(`http://localhost:4000/drive/delete?id=${encodeURIComponent(id)}`, { method: "DELETE" }),
+          fetch(`${backendBase}/drive/delete?id=${encodeURIComponent(id)}`, { method: "DELETE" }),
         ),
       );
       const failures = [];

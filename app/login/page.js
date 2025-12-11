@@ -9,13 +9,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const backendBase = (process.env.NEXT_PUBLIC_BACKEND_API_BASE || 'http://localhost:4000').replace(/\/$/, '');
 
   async function onSubmit(e) {
     e.preventDefault();
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('http://localhost:4000/auth/login', {
+      const res = await fetch(`${backendBase}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
